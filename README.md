@@ -707,6 +707,23 @@ REM 可选：安装 Codex slash prompts
 
 MIT License
 
+A股数据源
+全部免费，无需 API Key，无积分墙：
+
+Fallback 链（按被封 IP 风险排序）：
+A股 → tencent · mootdx · eastmoney · baostock · akshare
+
+来源	协议	提供内容
+mootdx	TCP 7709	OHLCV K 线、财务快照、F10 文本
+腾讯财经	HTTP (qt.gtimg.cn)	PE / PB / 市值 / 换手率（实时）
+东方财富	HTTP (datacenter / push2)	龙虎榜、限售解禁、板块行情、个股信息
+新浪财经	HTTP	K 线历史、财报三表
+同花顺	HTTP (10jqka)	EPS 一致预期
+财联社	HTTP (cls.cn)	全球财经快讯
+百度股市通	HTTP (finance.pae.baidu)	概念板块分类、资金流向
+
+数据源优先级 & 东财防封（v0.2.11）：行情 / K线 / 市值 / 财务能从 mootdx（通达信 TCP，不封 IP）或腾讯拿到的，一律走它们；东财只用于它独有的数据（龙虎榜 / 解禁 / 资金流 / 板块 / 个股新闻等）。所有东财请求统一走内置节流入口 _em_get()：串行限流（默认间隔 ≥1s + 0.1~0.5s 随机抖动）+ 复用 Keep-Alive 会话，多 Agent 跑批量分析不再触发临时封 IP（东财风控实测：每秒 >5 / 并发 ≥10 / 1 分钟 ≥200 触发封禁）。批量场景可设环境变量 EM_MIN_INTERVAL=1.5~2 进一步降速。仅东财限流，mootdx / 腾讯 / 新浪 / 同花顺 / 财联社 / 百度 不受影响。
+
 ---
 
 > "The best investment you can make is in yourself." — Warren Buffett
