@@ -5,7 +5,6 @@ __pycache__/
 .codex/
 /tmp/
 logs/command-log.jsonl
-reports/美团/command-log.jsonl
 
 # 雪球爬虫登录态缓存（含 cookies，本地使用）
 /tmp/xueqiu_state.json
@@ -31,7 +30,7 @@ assets/公司品牌图/
 *_token.txt
 *.token
 
-# 组合报告只存本地，不公开
-reports/portfolio-latest.md
-
-# 实盘记录/ 公开权重口径版；原始账本（含股数/金额）在 local/实盘记录-原始/（已被 /local/ 规则覆盖）
+# ===== 本地研究产物与记录 =====
+reports/
+实盘记录/
+筛选公司/
