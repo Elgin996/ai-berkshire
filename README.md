@@ -32,7 +32,7 @@
 
 ---
 
-## Skills 清单（20个）
+## Skills 清单（21个）
 
 ### 🔬 深度研究
 | Skill | 用途 | 适用场景 |
@@ -43,11 +43,12 @@
 | [`/private-company-research`](skills/private-company-research.md) | 未上市公司深度研究 | 针对未上市标的（如 SpaceX、蚂蚁等）的多源拼凑与估值 |
 | [`/deep-company-series`](skills/deep-company-series.md) | 深度长文系列拆解 | 公众号级多篇深度研究闭环 |
 
-### 📊 财报分析
+### 📊 财报与技术分析
 | Skill | 用途 | 适用场景 |
 |---|---|---|
 | [`/earnings-review`](skills/earnings-review.md) | 财报精读（一手资料） | 聚焦原始财报数据与附注，不依赖二手研报 |
 | [`/earnings-team`](skills/earnings-team.md) | 财报精读团队 + 发布 | 四大师解读财报 → 编辑润色 → 读者评审 |
+| [`/technical-analysis`](skills/technical-analysis.md) | 量化技术面与量价分析 | 均线、MACD、RSI、布林带、ATR风控止损与ETF折溢价 |
 
 ### 🏭 行业与筛选
 | Skill | 用途 | 适用场景 |
@@ -120,6 +121,9 @@ cd ai-berkshire
 # 财报一手精读
 /earnings-review 腾讯 2025Q4
 
+# 量化技术面与关键点位分析
+/technical-analysis 600519.SS
+
 # 行业漏斗筛选
 /industry-funnel AI算力
 
@@ -130,6 +134,7 @@ cd ai-berkshire
 在 **Codex** 中使用对应 Skill：
 ```text
 使用 investment-research 研究腾讯
+使用 technical-analysis 分析 600519.SS
 使用 earnings-review 分析 PDD 2025年报
 使用 industry-funnel 筛选 AI算力
 ```

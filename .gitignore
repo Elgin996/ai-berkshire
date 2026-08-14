@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 .codex/
+.cache/
 /tmp/
 logs/command-log.jsonl
 
