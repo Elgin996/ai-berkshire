@@ -113,6 +113,30 @@ RF = {
 LABELS = ("悲观", "基准", "乐观")
 
 # ---------------------------------------------------------------------------
+# 币种口径护栏（audit 子命令用）
+#
+# r 区间下沿 = 观测无风险利率 + 约 4.3pct 溢价，上沿 = 合成无风险利率 + 约 6pct 溢价。
+# 两个币种的区间差的 3 个百分点全部是国债利差，不含任何风险判断差异。
+# g 上限 = 该币种长期通胀 + 约 1pct 实际增长；超过等于假设公司长成整个经济体。
+# 数据来源见 reports/7公司10年投资价值横评-确定性调整后回报-20260814.md 第 3.4 节。
+# ---------------------------------------------------------------------------
+
+CURRENCY_BANDS = {
+    "CNY": dict(r=(0.06, 0.09), g_max=0.02, rf=0.0170,
+                note="中国10年期国债 1.70%（观测）/ 2.5-3.0%（合成）+ ERP 5.18%"),
+    "USD": dict(r=(0.09, 0.115), g_max=0.040, rf=0.0470,
+                note="美国10年期国债 4.70% + 中国总ERP 5.18%（含1.01%国别溢价）"),
+    "HKD": dict(r=(0.09, 0.115), g_max=0.040, rf=0.0470,
+                note="港币与美元挂钩，口径同 USD"),
+}
+
+# 离散风险的合法归属。写进折现率或 beta 一律打回——抬 r 三个百分点对第 10 年现金流的
+# 惩罚是第 1 年的 2.6 倍，而退市/断供是大致均匀甚至前置的年度危害率，会把时间分布搞反。
+RISK_PLACEMENT_OK = {"情景", "尾部档", "概率"}
+RISK_PLACEMENT_BAD = {"折现率", "r", "beta", "β"}
+RISK_PLACEMENT_WARN = {"未建模"}
+
+# ---------------------------------------------------------------------------
 # 核心计算
 # ---------------------------------------------------------------------------
 
@@ -374,6 +398,111 @@ def cmd_check(args):
     return 0
 
 
+def cmd_audit(args):
+    """三条硬约束的准出检查。任一条不过 → 【打回】，退出码 1。"""
+    band = CURRENCY_BANDS.get(args.currency.upper())
+    if band is None:
+        print(f"未知币种 {args.currency}，可选：{'、'.join(CURRENCY_BANDS)}", file=sys.stderr)
+        return 1
+    gs = [float(x) for x in args.g.split(",")]
+    fails, warns = [], []
+
+    print(f"\n{'='*72}\n估值口径准出检查   币种={args.currency.upper()}   r={args.r:.2%}   "
+          f"ROIC={args.roic:.0%}   g={'/'.join(f'{x:.1%}' for x in gs)}\n{'='*72}")
+
+    # --- C1 币种一致性：r 与 g 必须同币种 -----------------------------------
+    lo, hi = band["r"]
+    print(f"\n【C1】币种一致性 — r 与 g 必须用同一个币种")
+    print(f"     {args.currency.upper()} 口径基准：{band['note']}")
+    print(f"     r 合理区间 [{lo:.1%}, {hi:.1%}]   g 上限 {band['g_max']:.1%}   Rf {band['rf']:.2%}")
+    if not (lo <= args.r <= hi):
+        other = [c for c, b in CURRENCY_BANDS.items()
+                 if c != args.currency.upper() and b["r"][0] <= args.r <= b["r"][1]]
+        hint = f"（这个 r 落在 {'/'.join(other)} 的区间里——是不是拿错币种了？）" if other else ""
+        fails.append(f"C1: r={args.r:.2%} 不在 {args.currency.upper()} 的 [{lo:.1%},{hi:.1%}] 区间内 {hint}")
+    # g 上限卡在基准档。乐观档按设计是基准 +1pct，故额外放宽 1pct。
+    g_base = gs[1] if len(gs) >= 2 else gs[0]
+    if g_base > band["g_max"] or max(gs) > band["g_max"] + 0.01:
+        other = [c for c, b in CURRENCY_BANDS.items()
+                 if c != args.currency.upper() and g_base <= b["g_max"]]
+        hint = (f"（这是 {'/'.join(other)} 的量级——r 用了本币而 g 用了外币，"
+                f"正是最常见的口径混用）") if other else ""
+        fails.append(f"C1: 基准档 g={g_base:.1%} 超过 {args.currency.upper()} 上限 "
+                     f"{band['g_max']:.1%}（乐观档另放宽 1pct 至 {band['g_max']+0.01:.1%}）{hint}")
+    if args.rf is not None and abs(args.rf - band["rf"]) > 0.005:
+        fails.append(f"C1: 无风险利率 {args.rf:.2%} 与 {args.currency.upper()} 的 {band['rf']:.2%} 不符")
+    print(f"     → {'✗ 不通过' if any(f.startswith('C1') for f in fails) else '✓ 通过'}")
+
+    # --- C2 分母宽度 ---------------------------------------------------------
+    print(f"\n【C2】分母宽度 — r-g 至少 {MIN_SPREAD*100:.0f} 个百分点")
+    narrow = []
+    for label, g in zip(LABELS, gs):
+        pe, _, _, spread = exit_pe(args.roic, g, args.r)
+        bumped, _, _, _ = exit_pe(args.roic, g + 0.005, args.r)
+        tag = warn_spread(spread)
+        delta = f"  g+0.5pct → {bumped:.1f}x ({bumped/pe-1:+.0%})" if (pe and bumped) else ""
+        pe_s = f"{pe:.1f}x" if pe else "模型失效"
+        print(f"     {label}  g={g:>5.1%}  r-g={spread*100:>4.1f}pct  PE={pe_s:>10}{delta}  {tag}")
+        if spread <= 0:
+            fails.append(f"C2: {label}档 r-g={spread*100:.1f}pct <= 0，模型失效")
+        elif spread < MIN_SPREAD:
+            narrow.append(label)
+    if narrow:
+        if args.upside_only:
+            warns.append(f"C2: {'/'.join(narrow)}档分母不足 {MIN_SPREAD*100:.0f}pct，"
+                         f"已声明 --upside-only，仅可作情景参考")
+        else:
+            fails.append(f"C2: {'/'.join(narrow)}档分母不足 {MIN_SPREAD*100:.0f}pct。"
+                         f"要么调窄 g，要么加 --upside-only 声明这是情景而非估值")
+    print(f"     → {'✗ 不通过' if any(f.startswith('C2') for f in fails) else '✓ 通过'}")
+
+    # --- C3 离散风险归属 -----------------------------------------------------
+    print(f"\n【C3】离散风险归属 — 退市/VIE/地缘/监管必须归情景，不得进 r 或 β")
+    if args.beta != 1.0 and not args.beta_justification:
+        fails.append(f"C3: β={args.beta} 偏离 1.0 但未给 --beta-justification。"
+                     f"回归 β 的标准误就有 ±0.2-0.3，调它必须说明用的是自下而上的基本面 β")
+    for item in [x for x in args.discrete_risks.split(",") if x.strip()]:
+        if ":" not in item:
+            fails.append(f"C3: '{item}' 格式应为 风险名:归属")
+            continue
+        name, place = (p.strip() for p in item.split(":", 1))
+        if place in RISK_PLACEMENT_BAD:
+            fails.append(f"C3: 「{name}」被放进了 {place}。抬 r 对第10年现金流的惩罚是第1年的 2.6 倍，"
+                         f"而这类风险是均匀甚至前置的年度危害率——会把风险的时间分布搞反")
+            mark = "✗"
+        elif place in RISK_PLACEMENT_WARN:
+            warns.append(f"C3: 「{name}」未建模，必须写进报告的「限制」章节")
+            mark = "⚠"
+        elif place in RISK_PLACEMENT_OK:
+            mark = "✓"
+        else:
+            fails.append(f"C3: 「{name}」的归属 '{place}' 无法识别，"
+                         f"合法值：{'/'.join(sorted(RISK_PLACEMENT_OK | RISK_PLACEMENT_WARN))}")
+            mark = "✗"
+        print(f"     {mark} {name} → {place}")
+    if args.beta == 1.0:
+        print(f"     β = 1.0（默认值，无需理由）")
+    else:
+        print(f"     β = {args.beta}（理由：{args.beta_justification or '未给出'}）")
+    print(f"     → {'✗ 不通过' if any(f.startswith('C3') for f in fails) else '✓ 通过'}")
+
+    # --- 判决 ----------------------------------------------------------------
+    print(f"\n{'='*72}")
+    for w in warns:
+        print(f"⚠ {w}")
+    if fails:
+        print(f"\n【打回】{len(fails)} 项不通过：\n")
+        for i, msg in enumerate(fails, 1):
+            print(f"  {i}. {msg}")
+        print(f"\n修正后重跑本命令，通过才能把估值写进报告。\n")
+        return 1
+    print(f"\n【准出】三条硬约束全部通过，可以把估值写进报告。")
+    if warns:
+        print(f"       但上述 {len(warns)} 条警告必须在报告里显式写出。")
+    print()
+    return 0
+
+
 def cmd_irr(args):
     irr = irr_from_terminal(args.profit, args.mcap, args.pe, args.years, args.payout)
     terminal = args.profit * args.pe
@@ -431,6 +560,22 @@ def main():
     p = sub.add_parser("check", help="分母宽度体检")
     add_common(p)
     p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("audit", help="三条硬约束准出检查（【准出】/【打回】）")
+    p.add_argument("--currency", required=True, help="现金流币种：CNY / USD / HKD")
+    p.add_argument("--r", type=float, required=True, help="资本成本，小数")
+    p.add_argument("--roic", type=float, required=True, help="2036 稳态增量 ROIC，小数")
+    p.add_argument("--g", required=True, help="三档永续增速，逗号分隔，如 0.005,0.02,0.03")
+    p.add_argument("--rf", type=float, help="无风险利率，小数。给了就校验与币种是否匹配")
+    p.add_argument("--beta", type=float, default=1.0, help="股票风险系数，默认 1.0")
+    p.add_argument("--beta-justification", help="β 偏离 1.0 时必填")
+    p.add_argument("--discrete-risks", default="",
+                   help="离散风险归属，格式 风险名:归属，逗号分隔。"
+                        "合法归属：情景/尾部档/概率（通过）、未建模（警告）。"
+                        "写成 折现率/r/beta 一律打回")
+    p.add_argument("--upside-only", action="store_true",
+                   help="声明本档仅作上行/下行情景参考，允许分母不足 5pct")
+    p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("irr", help="从零算 IRR（给利润与市值）")
     p.add_argument("--profit", type=float, required=True, help="终值年利润")
