@@ -287,11 +287,20 @@ def cmd_financials(code: str):
         report_name = r.get("REPORT_DATE_NAME", "")
         revenue = r.get("TOTALOPERATEREVE")
         net_profit = r.get("PARENTNETPROFIT")
+        kcf_profit = r.get("KCFJCXSYJLR")
+        gross_margin = r.get("XSMLL")
+        net_margin = r.get("XSJLL")
         eps = r.get("EPSJB")
         bps = r.get("BPS")
         roe = r.get("ROEJQ")
+        roic = r.get("ROIC")
+        ocf = r.get("NETCASH_OPERATE_PK")
+        debt_ratio = r.get("ZCFZL")
+        inventory_days = r.get("CHZZTS")
+        ar_days = r.get("YSZKZZTS")
         rev_growth = r.get("TOTALOPERATEREVETZ")
         profit_growth = r.get("PARENTNETPROFITTZ")
+        kcf_growth = r.get("KCFJCXSYJLRTZ")
 
         print(f"\n  --- {date} {report_name} ---")
         if revenue is not None:
@@ -302,12 +311,39 @@ def cmd_financials(code: str):
             print(f"  归母净利润:     {_fmt_yi(net_profit)}")
         if profit_growth is not None:
             print(f"  净利润增速:     {_fmt_pct(profit_growth)}")
+        if kcf_profit is not None:
+            print(f"  扣非净利润:     {_fmt_yi(kcf_profit)}")
+        if kcf_growth is not None:
+            print(f"  扣非净利增速:   {_fmt_pct(kcf_growth)}")
+        if gross_margin is not None:
+            print(f"  销售毛利率:     {_fmt_pct(gross_margin)}")
+        if net_margin is not None:
+            print(f"  销售净利率:     {_fmt_pct(net_margin)}")
         if eps is not None:
             print(f"  基本每股收益:   {eps}")
         if bps is not None:
-            print(f"  每股净资产:     {bps:.2f}")
+            try:
+                print(f"  每股净资产:     {float(bps):.2f}")
+            except (ValueError, TypeError):
+                print(f"  每股净资产:     {bps}")
         if roe is not None:
             print(f"  ROE(加权):      {_fmt_pct(roe)}")
+        if roic is not None:
+            print(f"  ROIC:           {_fmt_pct(roic)}")
+        if ocf is not None:
+            print(f"  经营现金流OCF:  {_fmt_yi(ocf)}")
+        if debt_ratio is not None:
+            print(f"  资产负债率:     {_fmt_pct(debt_ratio)}")
+        if inventory_days is not None:
+            try:
+                print(f"  存货周转天数:   {float(inventory_days):.1f}天")
+            except (ValueError, TypeError):
+                pass
+        if ar_days is not None:
+            try:
+                print(f"  应收周转天数:   {float(ar_days):.1f}天")
+            except (ValueError, TypeError):
+                pass
 
 
 def cmd_search(keyword: str):

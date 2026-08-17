@@ -179,25 +179,35 @@ def fetch_tencent_quote(tx_symbol: str) -> dict[str, Any]:
     if len(parts) < 30:
         return {}
 
+    vol_raw = float(parts[6]) if parts[6] else None
     result = {
         "name": parts[1],
         "code": parts[2],
         "current_price": float(parts[3]) if parts[3] else None,
         "last_close": float(parts[4]) if parts[4] else None,
         "open_price": float(parts[5]) if parts[5] else None,
-        "volume_hands": float(parts[6]) if parts[6] else None,
+        "volume_shares": vol_raw,
+        "volume_lots": (vol_raw / 100) if vol_raw is not None else None,
         "change_amount": float(parts[31]) if len(parts) > 31 and parts[31] else None,
         "change_pct": float(parts[32]) if len(parts) > 32 and parts[32] else None,
         "high_price": float(parts[33]) if len(parts) > 33 and parts[33] else None,
         "low_price": float(parts[34]) if len(parts) > 34 and parts[34] else None,
-        "turnover_amount_wanyuan": float(parts[37]) if len(parts) > 37 and parts[37] else None,
+        "turnover_amount_wanyuan": (float(parts[37]) / 10000.0 if tx_symbol.startswith("hk") else float(parts[37])) if len(parts) > 37 and parts[37] else None,
         "turnover_rate": float(parts[38]) if len(parts) > 38 and parts[38] else None,
     }
 
-    # Extended ETF fields if available
+    if len(parts) >= 46:
+        try:
+            result["market_cap_circ_yi"] = float(parts[44]) if parts[44] else None
+            result["market_cap_total_yi"] = float(parts[45]) if parts[45] else None
+        except (ValueError, IndexError):
+            pass
+
+    # Extended ETF and shares fields if available
     if len(parts) >= 80:
         try:
             result["shares_outstanding"] = float(parts[72]) if parts[72] else None
+            result["total_shares"] = float(parts[73]) if parts[73] else None
             result["discount_rate_pct"] = float(parts[77]) if parts[77] else None
             result["iopv"] = float(parts[78]) if parts[78] else None
         except (ValueError, IndexError):

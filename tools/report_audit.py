@@ -162,25 +162,27 @@ def _parse_md_tables(lines: list) -> list:
                     if '⭐' in dline or '/5.0' in dline or '/ 5.0' in dline or '✅' in dline or '❌' in dline or '⚠️' in dline:
                         i += 1
                         continue
-                    cells = [c.strip().strip('*_~').strip() for c in dline.split('|')]
+                    cells = [c.strip() for c in dline.split('|')]
                     cells = [c for c in cells if c != '']
                     if len(cells) < 2:
                         i += 1
                         continue
-                    row_label = cells[0]
+                    row_label = re.sub(r'[\*_`~]+', '', cells[0]).strip()
                     for col_idx, cell in enumerate(cells[1:], start=1):
                         col_header = headers_raw[col_idx] if col_idx < len(headers_raw) else f'列{col_idx}'
+                        col_header_clean = re.sub(r'[\*_`~]+', '', col_header).strip()
+                        cell_clean = re.sub(r'[\*_`~]+', '', cell).strip()
                         # 提取 cell 中的数字+单位
                         m = re.search(
-                            r'[~约]?\$?(' + _SIGN + r'[\d,，\.]+)\s*'
+                            r'[~约]?\$?￥?(' + _SIGN + r'[\d,，\.]+)\s*'
                             r'(亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?',
-                            cell
+                            cell_clean
                         )
                         if m:
                             val = _clean_num(m.group(1))
                             unit = (m.group(2) or '').strip()
                             if val is not None and val != 0 and abs(val) < 1e15:
-                                results.append((row_label, col_header, val, unit, i + 1, dline))
+                                results.append((row_label, col_header_clean, val, unit, i + 1, dline))
                     i += 1
                 continue
         i += 1
@@ -491,11 +493,24 @@ def main():
 
     # verdict
     vrd = sub.add_parser('verdict', help='根据核验结果输出准出/打回判决')
-    vrd.add_argument('--results', required=True, help='JSON 数组，含 fetched_value 等字段')
+    vrd.add_argument('--results', default=None, help='JSON 数组，含 fetched_value 等字段')
+    vrd.add_argument('--results-file', '-f', default=None, help='包含核验结果 JSON 数组的文件路径')
     vrd.add_argument('--report', default='', help='报告名称（可选，用于显示）')
     vrd.add_argument('--output-json', action='store_true', help='将判决结果以 JSON 输出到 stdout')
 
     args = parser.parse_args()
+
+    def _parse_json_or_relaxed(raw_str):
+        if not raw_str:
+            return None
+        raw_str = raw_str.strip()
+        try:
+            return json.loads(raw_str)
+        except json.JSONDecodeError:
+            if raw_str.startswith("'") and raw_str.endswith("'"):
+                raw_str = raw_str[1:-1]
+            relaxed = raw_str.replace("'", '"')
+            return json.loads(relaxed)
 
     if args.command == 'extract':
         if not os.path.exists(args.report):
@@ -548,10 +563,21 @@ def main():
             print(json.dumps(template, ensure_ascii=False, indent=2))
 
     elif args.command == 'verdict':
-        try:
-            results = json.loads(args.results)
-        except json.JSONDecodeError as e:
-            print(f'❌ JSON 解析失败: {e}', file=sys.stderr)
+        results = []
+        if args.results_file:
+            if not os.path.exists(args.results_file):
+                print(f'❌ 结果文件不存在: {args.results_file}', file=sys.stderr)
+                sys.exit(1)
+            with open(args.results_file, 'r', encoding='utf-8') as f:
+                results = json.load(f)
+        elif args.results:
+            try:
+                results = _parse_json_or_relaxed(args.results)
+            except Exception as e:
+                print(f'❌ JSON 解析失败: {e}', file=sys.stderr)
+                sys.exit(1)
+        else:
+            print('❌ 请提供 --results 或 --results-file', file=sys.stderr)
             sys.exit(1)
 
         report_name = args.report or ''

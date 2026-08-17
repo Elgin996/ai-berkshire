@@ -18,6 +18,7 @@ Usage (called automatically by Skills, no manual execution needed):
 import argparse
 import json
 import math
+import re
 import sys
 from decimal import Decimal, Context, ROUND_HALF_EVEN, InvalidOperation
 
@@ -411,13 +412,16 @@ Examples:
     # cross-validate
     cv = sub.add_parser("cross-validate", help="多源交叉验证")
     cv.add_argument("--field", required=True, help="数据字段名")
-    cv.add_argument("--values", required=True, help="JSON: {来源: 数值}")
+    cv.add_argument("--values", default=None, help="JSON: {来源: 数值}")
+    cv.add_argument("--pairs", default=None, help="简易键值对，如 '年报=7518,Yahoo=7500' 或 '年报:6.01,东财:6.01'")
+    cv.add_argument("--values-file", "-f", default=None, help="包含 {来源: 数值} 的 JSON 文件路径")
     cv.add_argument("--unit", default="")
     cv.add_argument("--tolerance", type=float, default=2.0, help="容差百分比")
 
     # benford
     bf = sub.add_parser("benford", help="Benford定律检测")
-    bf.add_argument("--values", required=True, help="JSON数组")
+    bf.add_argument("--values", default=None, help="JSON数组")
+    bf.add_argument("--values-file", "-f", default=None, help="包含数字数组的 JSON 文件路径")
 
     # calc
     ca = sub.add_parser("calc", help="精确计算")
@@ -438,16 +442,60 @@ Examples:
     _force_utf8_stdio()
     args = parser.parse_args()
 
+    def _parse_json_or_relaxed(raw_str):
+        if not raw_str:
+            return None
+        raw_str = raw_str.strip()
+        try:
+            return json.loads(raw_str)
+        except json.JSONDecodeError:
+            # 兼容 PowerShell / Windows 下单引号包裹问题
+            if raw_str.startswith("'") and raw_str.endswith("'"):
+                raw_str = raw_str[1:-1]
+            # 替换单引号为双引号
+            relaxed = raw_str.replace("'", '"')
+            return json.loads(relaxed)
+
     if args.command == "verify-market-cap":
         verify_market_cap(args.price, args.shares, args.reported, args.currency)
     elif args.command == "verify-valuation":
         verify_valuation(args.price, args.eps, args.bvps, args.fcf_per_share,
                         args.dividend, args.revenue_per_share)
     elif args.command == "cross-validate":
-        values = json.loads(args.values)
+        values = {}
+        if args.values_file:
+            with open(args.values_file, "r", encoding="utf-8") as f:
+                values = json.load(f)
+        elif args.pairs:
+            # 解析 "来源1=数值1,来源2=数值2" 或 "来源1:数值1,来源2:数值2"
+            raw_pairs = [p.strip() for p in re.split(r'[,，]', args.pairs) if p.strip()]
+            for p in raw_pairs:
+                if "=" in p:
+                    k, v = p.split("=", 1)
+                elif ":" in p or "：" in p:
+                    k, v = re.split(r'[:：]', p, maxsplit=1)
+                else:
+                    continue
+                # 清洗数值中的单位后缀如 "亿"、"万"、"%"、","
+                v_clean = v.replace(",", "").replace("，", "").strip()
+                v_clean = re.sub(r'[亿万元港币RMBUSDKD%]+', '', v_clean).strip()
+                values[k.strip()] = float(v_clean)
+        elif args.values:
+            values = _parse_json_or_relaxed(args.values)
+        else:
+            print("❌ 请提供 --values、--pairs 或 --values-file", file=sys.stderr)
+            sys.exit(1)
+
         cross_validate(args.field, values, args.unit, args.tolerance)
     elif args.command == "benford":
-        values = json.loads(args.values)
+        if args.values_file:
+            with open(args.values_file, "r", encoding="utf-8") as f:
+                values = json.load(f)
+        elif args.values:
+            values = _parse_json_or_relaxed(args.values)
+        else:
+            print("❌ 请提供 --values 或 --values-file", file=sys.stderr)
+            sys.exit(1)
         benford_check(values)
     elif args.command == "calc":
         exact_calc(args.expr)

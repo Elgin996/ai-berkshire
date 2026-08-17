@@ -31,6 +31,8 @@ def format_markdown_report(sym_info: dict, summary: dict, quote_info: dict) -> s
     vol = summary["volatility"]
     trend = summary["trend"]
     levels = summary["key_levels"]
+    vd = summary.get("volume_dynamics", {})
+    vp = summary.get("volume_profile", {})
 
     name_label = quote_info.get("name", "") if quote_info else ""
     header_title = f"# 技术分析报告: {sym} {name_label}".strip()
@@ -47,21 +49,43 @@ def format_markdown_report(sym_info: dict, summary: dict, quote_info: dict) -> s
     md.append("| :--- | :---: | :--- |")
     md.append(f"| 最新收盘价 | **{p['close']}** | 前复权 (QFQ) 收盘价 |")
     md.append(f"| 开 / 高 / 低 | {p['open']} / {p['high']} / {p['low']} | 日内极值区间 |")
-    md.append(f"| 成交量 (Volume) | {p['volume']:,} | 场内成交量 |")
 
-    # ETF 特有字段展示
-    if is_etf and quote_info:
-        if quote_info.get("iopv") is not None:
-            md.append(f"| 实时参考净值 (IOPV) | **{quote_info['iopv']}** | 估算单位净值 |")
-        if quote_info.get("discount_rate_pct") is not None:
-            dr = quote_info['discount_rate_pct']
-            dr_state = "溢价" if dr > 0 else "折价"
-            md.append(f"| 实时折溢价率 | **{dr:.2f}%** | 当前处于{dr_state}状态 |")
-        if quote_info.get("shares_outstanding") is not None:
-            shares_yi = quote_info['shares_outstanding'] / 1e8
-            md.append(f"| 基金总份额 | **{shares_yi:.2f} 亿份** | 主力场内沉淀份额 |")
+    # Format standardized volume
+    raw_vol = p["volume"]
+    if is_etf:
+        lots = raw_vol / 100
+        md.append(f"| 成交量 (Volume) | **{raw_vol:,} 份** ({lots:,.0f} 手) | 场内基金成交份额 |")
+    elif market == "CN":
+        lots = raw_vol / 100
+        wan_shares = raw_vol / 10000
+        md.append(f"| 成交量 (Volume) | **{raw_vol:,} 股** ({lots:,.0f} 手 / {wan_shares:.2f} 万股) | 场内实际成交股数与手数 |")
+    elif market == "HK":
+        md.append(f"| 成交量 (Volume) | **{raw_vol:,} 股** | 港股场内成交股数 |")
+    else:
+        md.append(f"| 成交量 (Volume) | **{raw_vol:,}** | 场内成交量 |")
+
+    if quote_info:
+        if quote_info.get("turnover_amount_wanyuan") is not None:
+            amt_wy = quote_info["turnover_amount_wanyuan"]
+            amt_str = f"{amt_wy / 10000:.2f} 亿元" if amt_wy >= 10000 else f"{amt_wy:.2f} 万元"
+            md.append(f"| 成交额 (Turnover) | **{amt_str}** | 场内资金交投规模 |")
         if quote_info.get("turnover_rate") is not None:
-            md.append(f"| 换手率 | **{quote_info['turnover_rate']:.2f}%** | 场内交易活跃度 |")
+            md.append(f"| 换手率 (Turnover Rate) | **{quote_info['turnover_rate']:.2f}%** | 当日筹码换手活跃度 |")
+        if quote_info.get("shares_outstanding") is not None:
+            so = quote_info["shares_outstanding"]
+            unit_label = "亿份" if is_etf else "亿股"
+            md.append(f"| 流通股本/份额 | **{so / 1e8:.2f} {unit_label}** ({int(so):,} {'份' if is_etf else '股'}) | 场内实际流通规模 |")
+        if quote_info.get("market_cap_circ_yi") is not None and not is_etf:
+            md.append(f"| 流通市值 | **{quote_info['market_cap_circ_yi']:.2f} 亿元** | 实时流通市值 |")
+
+        # ETF 特有字段展示
+        if is_etf:
+            if quote_info.get("iopv") is not None:
+                md.append(f"| 实时参考净值 (IOPV) | **{quote_info['iopv']}** | 估算单位净值 |")
+            if quote_info.get("discount_rate_pct") is not None:
+                dr = quote_info['discount_rate_pct']
+                dr_state = "溢价" if dr > 0 else "折价"
+                md.append(f"| 实时折溢价率 | **{dr:.2f}%** | 当前处于{dr_state}状态 |")
 
     # 2. 均线与趋势系统
     md.append("\n## 二、 移动平均线系统 (Moving Averages)")
@@ -73,8 +97,30 @@ def format_markdown_report(sym_info: dict, summary: dict, quote_info: dict) -> s
             diff_pct = ((p["close"] - val) / val) * 100
             md.append(f"| {name} | {val:.2f} | {pos} ({diff_pct:+.2f}%) |")
 
-    # 3. 动量与震荡指标
-    md.append("\n## 三、 核心技术指标矩阵 (MACD & RSI & Bollinger)")
+    # 3. 量价配合与筹码分布 (Volume Dynamics & Profile)
+    if vd or vp:
+        md.append("\n## 三、 量价配合与筹码分布 (Volume Profile)")
+        if vd:
+            vma5_str = f"{int(vd['vma5']):,}" if vd.get('vma5') is not None else "--"
+            vma20_str = f"{int(vd['vma20']):,}" if vd.get('vma20') is not None else "--"
+            md.append(f"- **量能均线对比**: 5日均量 (VMA5)=`{vma5_str}`, 20日均量 (VMA20)=`{vma20_str}`")
+            md.append(f"- **实时量比**: 5日量比=`{vd.get('vol_ratio_5', '--')}`, 20日量比=`{vd.get('vol_ratio_20', '--')}`")
+            md.append(f"- **量价配合评估**: **{vd.get('desc', '--')}**")
+        if vp:
+            poc = vp.get("poc", {})
+            ov = vp.get("overhead_supply", {})
+            sp = vp.get("support_shelf", {})
+            if poc:
+                md.append(f"- **筹码控制峰 (POC)**: 价格密集区 `[{poc.get('range')}]` (中轴 `{poc.get('mid_price')}` 元, 占近 {vp.get('window_bars')} 日总成交量 `{poc.get('vol_pct')}%`)")
+            if ov and ov.get("peak_cluster"):
+                pk = ov["peak_cluster"]
+                md.append(f"- **上方高位套牢筹码区**: 核心峰 `[{pk.get('range')}]` (占比 `{pk.get('vol_pct')}%`), 上方累计套牢筹码占近 {vp.get('window_bars')} 日总成交量 **{ov.get('total_trapped_vol_pct')}%**")
+            if sp and sp.get("peak_cluster"):
+                sk = sp["peak_cluster"]
+                md.append(f"- **下方主要筹码支撑平台**: 核心峰 `[{sk.get('range')}]` (占比 `{sk.get('vol_pct')}%`), 下方累计承接筹码占近 {vp.get('window_bars')} 日总成交量 **{sp.get('total_support_vol_pct')}%**")
+
+    # 4. 动量与震荡指标
+    md.append("\n## 四、 核心技术指标矩阵 (MACD & RSI & Bollinger)")
     md.append(f"- **MACD 指标**: DIF=`{macd['dif']}`, DEA=`{macd['dea']}`, 柱状图=`{macd['hist']}`  \n  ➔ **信号评估**: **{macd['signal']}**")
     md.append(f"- **RSI 强弱指标**: RSI(6)=`{rsi['rsi6']}`, RSI(14)=`{rsi['rsi14']}`  \n  ➔ **状态评估**: **{rsi['state']}**")
     md.append(f"- **布林通道 (20,2)**: 上轨=`{boll['upper']}`, 中轨=`{boll['mid']}`, 下轨=`{boll['lower']}`, 带宽=`{boll['bandwidth_pct']}%`  \n  ➔ **通道位置**: **{boll['position']}**")
@@ -82,8 +128,8 @@ def format_markdown_report(sym_info: dict, summary: dict, quote_info: dict) -> s
     if vol.get("vwma20"):
         md.append(f"- **成交量加权均价 (VWMA 20)**: `{vol['vwma20']}`")
 
-    # 4. 关键点位与操作建议
-    md.append("\n## 四、 关键支撑阻力与风控点位")
+    # 5. 关键点位与操作建议
+    md.append("\n## 五、 关键支撑阻力与风控点位")
     md.append("| 维度 | 关键价位 (元) | 算法来源与技术含义 |")
     md.append("| :--- | :---: | :--- |")
     
