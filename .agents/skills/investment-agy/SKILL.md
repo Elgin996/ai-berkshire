@@ -90,19 +90,21 @@ This skill is generated from `skills/investment-agy.md` so Claude Code and Codex
   1. **生意本质**：用一句话定义这门生意的本质，拆解收入与利润驱动要素。
   2. **产品与飞轮效应**：用户/客户为什么付钱？生态粘性与客户迁移转换成本。
   3. **护城河五维逐一检验**：品牌/定价权、转换成本、网络效应、规模效应、技术壁垒。
-  4. **段永平式追问**：这门生意好在哪？如果只能用一句话描述，是什么？
+  4. **TAM 与第一性原理市值核验**：测算全球/国内该细分赛道终端总 TAM（总可触达市场规模），并与标的公司当前总市值直接做倍数对比（市值/TAM），从第一性原理评估是否存在“市值透支全行业天花板”的宏观倒挂。
+  5. **段永平式追问**：这门生意好在哪？如果只能用一句话描述，是什么？
 
 #### 2. 财务与估值分析师 (Financial & Valuation Analyst · 巴菲特视角)
 - **分析内容**：
   1. **数据源双重验证**：严格遵守 `skills/financial-data.md`，每个核心财务数据点取自两个独立数据源，误差 $>1\%$ 显式标注。
   2. **三表审计**：近 3-5 年营收/净利复合增速、ROE/ROIC、毛利率/经营利润率、自由现金流 (FCF)、资产负债表与净现金储备。
-  3. **程序化金融验算（强制使用 `tools/financial_rigor.py`）**：
+  3. **营运资本与隐形负债排查**：重点排查营运资金（存货 + 应收账款占资产与营收比例及现金流堰塞），研发费用资本化率，以及控股子公司是否存在外部战投对赌/回购条款（金融负债利息折现摊销对真实利润的侵蚀）。
+  4. **程序化金融验算（强制使用 `tools/financial_rigor.py`）**：
      - 市值验算：`python3 tools/financial_rigor.py verify-market-cap --price {价格} --shares {股本} --reported {市值} --currency {币种}`
      - 估值指标验算：`python3 tools/financial_rigor.py verify-valuation --price {价格} --eps {EPS} --bvps {每股净资产}`
      - 三情景估值：`python3 tools/financial_rigor.py three-scenario --price {价格} --eps {EPS} --shares {总股本} --growth {乐观} {中性} {悲观} --pe {乐观PE} {中性PE} {悲观PE}`
-  4. **十年折现估值与硬约束（强制使用 `tools/terminal_value.py`）**：
+  5. **十年折现估值与硬约束（强制使用 `tools/terminal_value.py`）**：
      - 运行 `python3 tools/terminal_value.py audit` 完成 C1 (同币种)、C2 ($r-g \ge 5\%$)、C3 (离散风险归属) 三条硬约束准出检查。
-  5. **巴菲特式追问**：如果股市明天关闭 5 年，你愿意以这个价格持有吗？
+  6. **巴菲特式追问**：如果股市明天关闭 5 年，你愿意以这个价格持有吗？
 
 #### 3. 行业与竞争分析师 (Industry & Competition Researcher · 芒格视角)
 - **分析内容**：

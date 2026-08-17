@@ -84,13 +84,30 @@ def format_markdown_report(sym_info: dict, summary: dict, quote_info: dict) -> s
 
     # 4. 关键点位与操作建议
     md.append("\n## 四、 关键支撑阻力与风控点位")
-    md.append("| 维度 | 关键价位 | 说明 |")
-    md.append("| :--- | :--- | :--- |")
-    res_str = " / ".join(map(str, levels["resistance_levels"])) if levels["resistance_levels"] else "暂无临近压力"
-    sup_str = " / ".join(map(str, levels["support_levels"])) if levels["support_levels"] else "暂无临近支撑"
-    md.append(f"| **上方阻力位 (Resistance)** | **{res_str}** | 突破需量能配合 |")
-    md.append(f"| **下方支撑位 (Support)** | **{sup_str}** | 逢低回踩防守区间 |")
-    md.append(f"| **建议防守止损点 (2*ATR)** | **{levels['stop_loss_suggested_2atr']}** | 跌破此位需严格控制仓位 |")
+    md.append("| 维度 | 关键价位 (元) | 算法来源与技术含义 |")
+    md.append("| :--- | :---: | :--- |")
+    
+    res_details = levels.get("resistance_details", [])
+    if res_details:
+        for i, r in enumerate(res_details, 1):
+            md.append(f"| **上方阻力 R{i}** | **{r['price']:.2f}** | {r['source']} |")
+    else:
+        res_str = " / ".join(map(str, levels["resistance_levels"])) if levels["resistance_levels"] else "暂无临近压力"
+        md.append(f"| **上方阻力位 (Resistance)** | **{res_str}** | 突破需量能配合 |")
+
+    sup_details = levels.get("support_details", [])
+    if sup_details:
+        for i, s in enumerate(sup_details, 1):
+            md.append(f"| **下方支撑 S{i}** | **{s['price']:.2f}** | {s['source']} |")
+    else:
+        sup_str = " / ".join(map(str, levels["support_levels"])) if levels["support_levels"] else "暂无临近支撑"
+        md.append(f"| **下方支撑位 (Support)** | **{sup_str}** | 逢低回踩防守区间 |")
+
+    stop_loss = levels.get("stop_loss_suggested_2atr")
+    if stop_loss is not None:
+        md.append(f"| **建议防守止损点 (2*ATR)** | **{stop_loss:.2f}** | 动态移动跟踪止损线，跌破需严格控制仓位 |")
+    else:
+        md.append("| **建议防守止损点 (2*ATR)** | **暂无足够数据** | 建议以均线或前低作为止损基准 |")
 
     return "\n".join(md)
 

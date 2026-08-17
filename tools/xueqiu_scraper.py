@@ -34,9 +34,20 @@ import json
 import os
 import random
 import re
+import sys
 from datetime import datetime
-from pathlib import Path
-from playwright.async_api import async_playwright
+
+# 跨平台输出编码保护，防止 Windows 终端/管道下 Unicode 异常
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    async_playwright = None
 
 
 def is_match(text, keywords):
@@ -404,6 +415,10 @@ async def main():
     print("=" * 60)
     print(f"雪球爬虫 | user_id={args.user_id} | keywords={keywords} | dump_all={args.dump_all}")
     print("=" * 60)
+
+    if async_playwright is None:
+        print("错误: 未安装 playwright 模块。请先运行 `pip install playwright && playwright install chromium`。")
+        return
 
     async with async_playwright() as pw:
         session = await load_with_state(pw, args.state_path, args.user_id)

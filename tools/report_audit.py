@@ -30,6 +30,14 @@ import sys
 from decimal import Decimal, Context, ROUND_HALF_EVEN
 from random import Random
 
+# 跨平台输出编码保护，防止 Windows 终端/管道下 Unicode 异常
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
 
 # ---------------------------------------------------------------------------
@@ -107,8 +115,14 @@ def _is_valid_label(label: str) -> bool:
         return False
     # 常见无意义标签
     _SKIP = {'来源', 'sources', 'source', '说明', '注意', '备注', '数据来源',
-             'n/a', '—', '-', '/', '合计', 'total', '单位', '趋势'}
+             'n/a', '—', '-', '/', '合计', 'total', '单位', '趋势',
+             '检查项', '审查项', '状态', '建议', '评分', '星级', '操作建议',
+             '仓位管理', '偏好', '投资者偏好', '维度', '评估维度', '对应大师', '综合评分'}
     if label.lower() in _SKIP:
+        return False
+    if any(kw in label for kw in ['评分', '星级', 'Checklist', 'checklist', '偏好', '操作建议', '仓位管理', '综合评分', '建议关注', '建议防守']):
+        return False
+    if '⭐' in label or '/5.0' in label or '/ 5.0' in label:
         return False
     return True
 
@@ -144,6 +158,10 @@ def _parse_md_tables(lines: list) -> list:
                     dline = lines[i].strip()
                     if not dline or not dline.startswith('|'):
                         break
+                    # 跳过包含评分星级、Checklist与定性审查行
+                    if '⭐' in dline or '/5.0' in dline or '/ 5.0' in dline or '✅' in dline or '❌' in dline or '⚠️' in dline:
+                        i += 1
+                        continue
                     cells = [c.strip().strip('*_~').strip() for c in dline.split('|')]
                     cells = [c for c in cells if c != '']
                     if len(cells) < 2:
