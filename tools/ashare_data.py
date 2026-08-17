@@ -16,17 +16,30 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from decimal import Decimal, ROUND_HALF_EVEN
 
+
+def _force_utf8_stdio():
+    """把 stdout/stderr 强制切到 UTF-8，防止 Windows 编码崩溃。"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+_force_utf8_stdio()
+
 _TIMEOUT = 15
+_CURL_BIN = shutil.which("curl") or "curl"
 
 
 def _curl(url):
     """用 curl --noproxy 直连，绕过系统代理。"""
     result = subprocess.run(
-        ["/usr/bin/curl", "-s", "--noproxy", "*",
+        [_CURL_BIN, "-s", "--noproxy", "*",
          "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
          url],
         capture_output=True, timeout=_TIMEOUT,
