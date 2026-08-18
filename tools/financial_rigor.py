@@ -20,11 +20,57 @@ import json
 import math
 import re
 import sys
-from decimal import Decimal, Context, ROUND_HALF_EVEN, InvalidOperation
+from decimal import Decimal, Context, ROUND_HALF_EVEN
 
-# ---------------------------------------------------------------------------
-# Exact Decimal Engine (no floating-point drift)
-# ---------------------------------------------------------------------------
+_CALC_ALLOWED = set("0123456789.+-*/()eE")
+_NUM_TOKEN_RE = re.compile(
+    r'(?<![0-9.])(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?'
+)
+_UNIT_SUFFIXES = (
+    "亿美元", "亿港元", "亿人民币", "亿元", "亿",
+    "万元", "万",
+    "港币", "港元", "人民币", "元",
+    "HKD", "USD", "CNY", "RMB", "TWD", "JPY",
+    "%", "％",
+)
+
+
+def evaluate_decimal(expr: str) -> Decimal:
+    """Evaluate +, -, *, /, () with Decimal literals (no float round-trip)."""
+    compact = expr.replace(" ", "")
+    if not compact or not all(c in _CALC_ALLOWED for c in compact):
+        raise ValueError(f"不安全的表达式: {expr}")
+
+    def _wrap(match) -> str:
+        return f'Decimal("{match.group(0)}")'
+
+    transformed = _NUM_TOKEN_RE.sub(_wrap, compact)
+    result = eval(transformed, {"__builtins__": {}, "Decimal": Decimal}, {})
+    if not isinstance(result, Decimal):
+        result = exact(result)
+    return result
+
+
+def strip_value_units(raw: str) -> str:
+    """Strip known currency/unit suffixes. Match whole tokens, not character classes.
+
+    Character-class stripping used to turn '100HKD' into '100H' because H is
+    not in [港币RMBUSDKD] while K and D are.
+    """
+    s = raw.replace(",", "").replace("，", "").strip()
+    changed = True
+    while changed and s:
+        changed = False
+        for suf in _UNIT_SUFFIXES:
+            if s.endswith(suf):
+                s = s[: -len(suf)].strip()
+                changed = True
+                break
+            if len(s) >= len(suf) and s[-len(suf):].upper() == suf.upper() and suf.isascii():
+                s = s[: -len(suf)].strip()
+                changed = True
+                break
+    return s
 
 _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
 
@@ -184,6 +230,10 @@ def cross_validate(field_name, source_values: dict, unit="", tolerance_pct=2.0):
     print(f"交叉验证: {field_name} (Cross-Validation)")
     print("=" * 60)
 
+    if not source_values:
+        print("  ❌ 没有可比较的数据")
+        return {"consensus": None, "all_consistent": False}
+
     values = {k: exact(v) for k, v in source_values.items()}
     sources = list(values.keys())
     nums = list(values.values())
@@ -303,25 +353,21 @@ def exact_calc(expr: str):
     """Evaluate a financial expression with exact decimal arithmetic.
 
     Supports: +, -, *, /, (), numbers (including scientific notation).
+    Numbers are parsed as Decimal literals so 0.1 + 0.2 is 0.3, not a float.
     """
     print("=" * 60)
     print("精确计算 (Exact Calculator)")
     print("=" * 60)
 
-    # Safe evaluation: only allow numbers and arithmetic
-    allowed = set("0123456789.+-*/() eE")
-    if not all(c in allowed for c in expr.replace(" ", "")):
-        print(f"  ❌ 不安全的表达式: {expr}")
-        return None
-
     try:
-        # Replace scientific notation for Decimal compatibility
-        result = eval(expr, {"__builtins__": {}}, {})
-        d_result = exact(result)
+        d_result = evaluate_decimal(expr)
         print(f"  表达式: {expr}")
         print(f"  结果:   {fmt_number(d_result)}")
         print(f"  精确值: {d_result}")
-        return float(d_result)
+        return d_result
+    except ValueError as e:
+        print(f"  ❌ {e}")
+        return None
     except Exception as e:
         print(f"  ❌ 计算错误: {e}")
         return None
@@ -352,10 +398,11 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
 
     print(f"  当前股价: {p} {currency}")
     print(f"  当前EPS:  {eps}")
+    print(f"  总股本:   {shares} 亿股")
     print(f"  预测期:   {years}年")
     print()
-    print(f"  {'情景':12} {'年增速':>8} {'目标PE':>8} {'目标EPS':>10} {'目标股价':>10} {'涨跌幅':>8}")
-    print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*8}")
+    print(f"  {'情景':12} {'年增速':>8} {'目标PE':>8} {'目标EPS':>10} {'目标股价':>10} {'目标市值':>12} {'涨跌幅':>8}")
+    print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*12} {'-'*8}")
 
     for name, growth, pe in scenarios:
         g = exact(growth)
@@ -365,10 +412,12 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
         for _ in range(years):
             future_eps = _CTX.multiply(future_eps, _CTX.add(Decimal("1"), g))
         target_price = _CTX.multiply(future_eps, target_pe)
-        change = float(target_price - p) / float(p) * 100
+        target_mcap = _CTX.multiply(target_price, shares)
+        change = float(target_price - p) / float(p) * 100 if p != 0 else float("nan")
 
         print(f"  {name:12} {float(g)*100:>7.0f}% {float(target_pe):>7.0f}x "
-              f"{float(future_eps):>10.2f} {float(target_price):>9.1f} {change:>+7.1f}%")
+              f"{float(future_eps):>10.2f} {float(target_price):>9.1f} "
+              f"{float(target_mcap):>10.1f}亿 {change:>+7.1f}%")
 
     print()
     print("  ✅ 所有计算使用精确十进制, 结果可审计复现")
@@ -457,7 +506,8 @@ Examples:
             return json.loads(relaxed)
 
     if args.command == "verify-market-cap":
-        verify_market_cap(args.price, args.shares, args.reported, args.currency)
+        ok = verify_market_cap(args.price, args.shares, args.reported, args.currency)
+        sys.exit(0 if ok else 1)
     elif args.command == "verify-valuation":
         verify_valuation(args.price, args.eps, args.bvps, args.fcf_per_share,
                         args.dividend, args.revenue_per_share)
@@ -476,10 +526,12 @@ Examples:
                     k, v = re.split(r'[:：]', p, maxsplit=1)
                 else:
                     continue
-                # 清洗数值中的单位后缀如 "亿"、"万"、"%"、","
-                v_clean = v.replace(",", "").replace("，", "").strip()
-                v_clean = re.sub(r'[亿万元港币RMBUSDKD%]+', '', v_clean).strip()
-                values[k.strip()] = float(v_clean)
+                v_clean = strip_value_units(v)
+                try:
+                    values[k.strip()] = float(v_clean)
+                except ValueError:
+                    print(f"❌ 无法解析数值: {v}", file=sys.stderr)
+                    sys.exit(1)
         elif args.values:
             values = _parse_json_or_relaxed(args.values)
         else:
@@ -498,7 +550,8 @@ Examples:
             sys.exit(1)
         benford_check(values)
     elif args.command == "calc":
-        exact_calc(args.expr)
+        result = exact_calc(args.expr)
+        sys.exit(0 if result is not None else 1)
     elif args.command == "three-scenario":
         three_scenario_valuation(
             args.price, args.eps, args.shares,

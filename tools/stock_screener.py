@@ -21,7 +21,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import OrderedDict
 
 # ============================================================
@@ -69,9 +69,10 @@ def fetch_prices_curl(ticker, days=120):
             c = quote.get("close", [None] * len(timestamps))[i]
             v = quote.get("volume", [None] * len(timestamps))[i]
             h = quote.get("high", [None] * len(timestamps))[i]
-            if c and v and h:
-                dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
-                rows.append({"date": dt, "close": c, "high": h, "volume": v})
+            if c is None or v is None or h is None:
+                continue
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            rows.append({"date": dt, "close": c, "high": h, "volume": v})
         return rows if len(rows) > 60 else None
     except Exception as e:
         return None

@@ -134,6 +134,10 @@ def main():
     print(f"\n  完整数据已保存到: {csv_path}")
     print(f"  共 {len(stocks)} 只股票（按潜在涨幅排序）\n")
 
+    if not stocks:
+        print("  无有效公允价值记录，跳过统计摘要。")
+        return
+
     # 统计摘要
     undervalued = [s for s in stocks if s["upside_pct"] > 0]
     overvalued = [s for s in stocks if s["upside_pct"] < 0]

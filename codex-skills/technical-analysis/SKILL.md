@@ -55,6 +55,12 @@ python3 tools/technical-analysis/scripts/run_analysis.py 300394.SZ --date 2026-0
 python3 tools/technical-analysis/scripts/run_analysis.py 600519.SS --format json
 ```
 
+依赖（每个环境安装一次）：
+
+```bash
+pip install -r tools/technical-analysis/requirements.txt
+```
+
 ---
 
 ## 参数支持

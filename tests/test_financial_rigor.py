@@ -54,8 +54,8 @@ class TestGbkConsoleSurvival(unittest.TestCase):
                      '--shares', '500000000', '--reported', '40.00',
                      '--currency', 'CNY'])
         self.assertEqual(
-            proc.returncode, 0,
-            "偏差超标告警路径在 GBK 控制台崩溃了：\n"
+            proc.returncode, 1,
+            "偏差超标必须非零退出；告警路径在 GBK 控制台崩溃了：\n"
             + proc.stderr.decode('utf-8', 'replace')[-800:])
         self.assertNotIn(b'UnicodeEncodeError', proc.stderr)
         self.assertIn('❌', proc.stdout.decode('utf-8', 'replace'),
@@ -112,6 +112,28 @@ class TestMarketCapMathUnaffected(unittest.TestCase):
 
     def test_gross_mismatch_returns_false(self):
         self.assertFalse(F.verify_market_cap(8.00, 500000000, 40.00, 'CNY'))
+
+
+class TestExactCalculator(unittest.TestCase):
+
+    def test_point_one_plus_point_two_is_three_tenths(self):
+        self.assertEqual(F.evaluate_decimal('0.1 + 0.2'), F.exact('0.3'))
+
+    def test_scientific_notation(self):
+        self.assertEqual(F.evaluate_decimal('510 * 9.11e9'), F.exact('510') * F.exact('9.11e9'))
+
+    def test_rejects_names(self):
+        with self.assertRaises(ValueError):
+            F.evaluate_decimal('__import__("os")')
+
+
+class TestStripValueUnits(unittest.TestCase):
+
+    def test_hkd_suffix_not_mangled(self):
+        self.assertEqual(F.strip_value_units('100HKD'), '100')
+
+    def test_yi_suffix(self):
+        self.assertEqual(F.strip_value_units('7518亿'), '7518')
 
 
 if __name__ == '__main__':

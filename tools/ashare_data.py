@@ -19,7 +19,7 @@ import os
 import shutil
 import subprocess
 import sys
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Decimal, InvalidOperation
 
 
 def _force_utf8_stdio():
@@ -65,16 +65,35 @@ def _curl_json(url, params=None):
 # 腾讯行情 API（稳定可靠，无需鉴权）
 # ---------------------------------------------------------------------------
 
+def _normalize_a_code(code: str) -> str:
+    return code.strip().replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
+
+
+def _board_prefix(code: str) -> str:
+    """Tencent board prefix: sh / sz / bj.
+
+    92xxxx 北交所新股必须在 9xxxx 沪市 B 股之前判断，否则会被标成 sh。
+    688 科创板以 6 开头，归沪市，不能落到 startswith('8') 的北交所分支。
+    """
+    c = _normalize_a_code(code)
+    if c.startswith(("6", "5")) or (c.startswith("9") and not c.startswith("92")):
+        return "sh"
+    if c.startswith(("0", "3", "2", "1")):
+        return "sz"
+    if c.startswith(("4", "8", "92")):
+        return "bj"
+    return "sh"
+
+
+def _listing_exchange(code: str) -> str:
+    """Exchange suffix for East Money SECUCODE: SH / SZ / BJ."""
+    return _board_prefix(code).upper()
+
+
 def _qq_code(code: str) -> str:
     """将股票代码转为腾讯行情格式。"""
-    code = code.strip().replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
-    if code.startswith(("6", "9", "5")):
-        return f"sh{code}"
-    elif code.startswith(("0", "3", "2", "1")):
-        return f"sz{code}"
-    elif code.startswith(("4", "8")):
-        return f"bj{code}"
-    return f"sh{code}"
+    c = _normalize_a_code(code)
+    return f"{_board_prefix(c)}{c}"
 
 
 def _parse_qq_quote(raw: str) -> dict:
@@ -108,16 +127,17 @@ def _parse_qq_quote(raw: str) -> dict:
         # 注意：腾讯 ~ 分隔协议第 47/48 位是当日涨停价/跌停价，不是 52 周极值（issue #70）
         "limit_up": fields[47] if len(fields) > 47 else "-",
         "limit_down": fields[48] if len(fields) > 48 else "-",
-        "total_shares": fields[38] if len(fields) > 38 else "-",  # will recalculate
+        # 腾讯 ~72/73 为流通股本/总股本（股）。第 38 位是换手率，不能当股本。
+        "float_shares": fields[72] if len(fields) > 72 else "-",
+        "total_shares": fields[73] if len(fields) > 73 else "-",
     }
 
 
 def _em_secid(code: str) -> str:
     """将股票代码转为东方财富 secid 格式：沪市前缀 1.，深市/北交所前缀 0.。"""
-    code = code.strip().replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
-    if code.startswith(("6", "9", "5")):
-        return f"1.{code}"
-    return f"0.{code}"
+    c = _normalize_a_code(code)
+    prefix = "1" if _board_prefix(c) == "sh" else "0"
+    return f"{prefix}.{c}"
 
 
 def _fetch_52w(code: str) -> tuple:
@@ -137,6 +157,61 @@ def _fetch_52w(code: str) -> tuple:
         except Exception:
             continue
     return "-", "-"
+
+
+def _optional_decimal(value):
+    if value is None or value == "-" or value == "":
+        return None
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if d == 0:
+        return None
+    return d
+
+
+def verify_price_times_shares(price, shares, reported_cap_yuan, max_deviation_pct=5.0):
+    """Independent check: price × shares vs reported cap in yuan.
+
+    Never derive shares from the cap being verified. If the raw share count
+    looks like 万股 (off by ~1e4), rescale once.
+    Returns a dict, or None if any input is missing.
+    """
+    p = _optional_decimal(price)
+    s = _optional_decimal(shares)
+    r = _optional_decimal(reported_cap_yuan)
+    if p is None or s is None or r is None:
+        return None
+    calc = p * s
+    dev = abs(float(calc - r) / float(r)) * 100 if r != 0 else 0.0
+    if dev > 50:
+        calc_wan = p * s * Decimal(10000)
+        dev_wan = abs(float(calc_wan - r) / float(r)) * 100
+        if dev_wan < dev:
+            calc, s, dev = calc_wan, s * Decimal(10000), dev_wan
+    return {
+        "ok": dev <= max_deviation_pct,
+        "calculated": calc,
+        "reported": r,
+        "deviation_pct": dev,
+        "shares_used": s,
+    }
+
+
+def _fetch_total_shares(code: str):
+    """East Money f84 = 总股本（股，fltt=2 原始值）。取不到返回 None。"""
+    secid = _em_secid(code)
+    query = f"api/qt/stock/get?secid={secid}&fields=f84&invt=2&fltt=2"
+    for host in ("push2delay.eastmoney.com", "push2.eastmoney.com"):
+        try:
+            data = _curl_json(f"https://{host}/{query}").get("data") or {}
+            shares = data.get("f84")
+            if shares not in (None, "-", ""):
+                return shares
+        except Exception:
+            continue
+    return None
 
 
 def _fmt_yi(value) -> str:
@@ -221,18 +296,22 @@ def cmd_valuation(code: str):
     print(f"  52周最高:   {high_52w}")
     print(f"  52周最低:   {low_52w}")
 
-    # 市值验算
-    try:
-        p = Decimal(price)
-        cap = Decimal(market_cap_yi) * Decimal("1e8")
-        shares = cap / p
-        print(f"\n  推算总股本: {_fmt_yi(float(shares))}股")
-        calc_cap = p * shares
-        reported_cap = Decimal(market_cap_yi) * Decimal("1e8")
-        diff = abs(calc_cap - reported_cap) / reported_cap * 100
-        print(f"  市值验算:   ✅ 一致（推算法，偏差 {float(diff):.1f}%）")
-    except Exception:
-        pass
+    shares = _optional_decimal(d.get("total_shares"))
+    if shares is None:
+        shares = _optional_decimal(_fetch_total_shares(code))
+    reported_yuan = _optional_decimal(market_cap_yi)
+    if reported_yuan is not None:
+        reported_yuan *= Decimal("1e8")
+    result = verify_price_times_shares(price, shares, reported_yuan)
+    if result is None:
+        print("\n  ⚠️ 缺少独立总股本，无法验算市值（不会用市值反推股本）")
+    else:
+        print(f"\n  总股本:     {_fmt_yi(float(result['shares_used']))}股")
+        print(f"  计算市值:   {_fmt_yi(float(result['calculated']))}")
+        if result["ok"]:
+            print(f"  市值验算:   ✅ 股价×股本 vs 报告市值，偏差 {result['deviation_pct']:.2f}%")
+        else:
+            print(f"  市值验算:   ❌ 偏差 {result['deviation_pct']:.2f}% > 5%，请核对本位与股本口径")
 
 
 def cmd_financials(code: str):
@@ -242,8 +321,8 @@ def cmd_financials(code: str):
     d = _parse_qq_quote(raw)
     name = d.get("name", code) if d else code
 
-    code_clean = code.strip().replace(".SH", "").replace(".SZ", "").replace(".BJ", "")
-    market = "SH" if code_clean.startswith(("6", "9", "5")) else "SZ"
+    code_clean = _normalize_a_code(code)
+    market = _listing_exchange(code_clean)
 
     # 东方财富 datacenter API（年报数据）
     fin_url = "https://datacenter.eastmoney.com/securities/api/data/get"
@@ -349,8 +428,10 @@ def cmd_financials(code: str):
 def cmd_search(keyword: str):
     """搜索股票代码。"""
     url = "https://searchadapter.eastmoney.com/api/suggest/get"
-    # Use env var or fall back to the public eastmoney search token
-    token = os.environ.get("EASTMONEY_SEARCH_TOKEN") or "D43BF722C8E33BDC906FB84D85E326E8"
+    # Public East Money suggest-API client token (the same value the website
+    # sends). Override with EASTMONEY_SEARCH_TOKEN if it is rotated.
+    _EASTMONEY_PUBLIC_SEARCH_TOKEN = "D43BF722C8E33BDC906FB84D85E326E8"
+    token = os.environ.get("EASTMONEY_SEARCH_TOKEN") or _EASTMONEY_PUBLIC_SEARCH_TOKEN
     params = {
         "input": keyword,
         "type": "14",

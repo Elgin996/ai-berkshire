@@ -144,9 +144,11 @@ RISK_PLACEMENT_WARN = {"未建模"}
 def exit_pe(roic, g, r):
     """永续增长模型的终值 PE。
 
-    返回 (pe, 留存率, 分子, 分母)。分母 <= 0 时返回 pe=None（模型失效）。
+    返回 (pe, 留存率, 分子, 分母)。分母 <= 0 或 ROIC=0 时返回 pe=None（模型失效）。
     """
     spread = r - g
+    if roic == 0:
+        return None, None, None, spread
     retention = g / roic
     numerator = 1.0 - retention
     if spread <= 0:
@@ -159,7 +161,14 @@ def irr_from_terminal(profit_2036, mcap_today, pe, years=10, payout=0.0):
 
     payout = 股息率 - 稀释率，年化，直接加在几何回报上（报告口径，未做再投资复利）。
     """
-    return (profit_2036 * pe / mcap_today) ** (1.0 / years) - 1.0 + payout
+    if years <= 0:
+        raise ValueError("持有期必须为正")
+    if mcap_today == 0:
+        raise ValueError("今日市值不能为 0")
+    ratio = profit_2036 * pe / mcap_today
+    if ratio < 0:
+        raise ValueError("终值市值为负，几何 IRR 无定义")
+    return ratio ** (1.0 / years) - 1.0 + payout
 
 
 def rescale_irr(irr_base, pe_base, pe_new, k, years=10):
@@ -240,6 +249,10 @@ def cmd_pe(args):
     pe, retention, numerator, spread = exit_pe(args.roic, args.g, args.r)
     print(f"\nPE(终值) = (1 - g/ROIC) / (r - g)\n")
     print(f"  ROIC = {args.roic:.1%}   g = {args.g:.2%}   r = {args.r:.2%}\n")
+    if retention is None:
+        print(f"  分母 r - g      = {args.r:.4f} - {args.g:.4f} = {spread:.4f}  ({spread*100:.1f}pct)")
+        print(f"\n  ✗ ROIC = 0，模型失效。\n")
+        return 1
     print(f"  留存率 g/ROIC   = {args.g:.4f} / {args.roic:.2f} = {retention:.4f}  ({retention:.1%})")
     print(f"  分子 1 - 留存率 = {numerator:.4f}                    （即派息率 {numerator:.1%}）")
     print(f"  分母 r - g      = {args.r:.4f} - {args.g:.4f} = {spread:.4f}  ({spread*100:.1f}pct)")
@@ -504,7 +517,11 @@ def cmd_audit(args):
 
 
 def cmd_irr(args):
-    irr = irr_from_terminal(args.profit, args.mcap, args.pe, args.years, args.payout)
+    try:
+        irr = irr_from_terminal(args.profit, args.mcap, args.pe, args.years, args.payout)
+    except ValueError as e:
+        print(f"\n✗ {e}\n")
+        return 1
     terminal = args.profit * args.pe
     mult = terminal / args.mcap
     print(f"\nIRR = (2036市值 / 今日市值)^(1/{args.years}) - 1 + 股息率 - 稀释率\n")

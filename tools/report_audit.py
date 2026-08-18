@@ -52,31 +52,6 @@ _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
 # 符号位涵盖 ASCII 正负号、Unicode 减号(U+2212)、en-dash(U+2013)、全角正负号。
 _SIGN = r'[+\-−–－＋]?'
 
-_PATTERNS = [
-    # 百分比
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*%',                        '%',    'percent'),
-    # 亿元/亿美元/亿港元
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*亿(元|美元|港元|RMB|USD|HKD)?', '亿',    'hundred_million'),
-    # 倍数 PE/PB/PS
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*[xX倍]',                   'x',    'multiple'),
-    # 万亿
-    (r'(' + _SIGN + r'[\d,，\.]+)\s*万亿',                      '万亿', 'trillion'),
-    # 美元绝对值（B/T）
-    (r'\$\s*(' + _SIGN + r'[\d,，\.]+)\s*([BMT亿])',             '$',    'usd_abs'),
-    # 纯整数（如市值、收入、用户数等，出现在表格 | 里）
-    (r'\|\s*[~约]?\$?(' + _SIGN + r'[\d,，\.]+)\s*\|',          '',     'table_num'),
-]
-
-_LABEL_RE = re.compile(
-    r'(?P<label>[^\|\n：:]{2,25})[：:\s]+[~约]?\$?(?P<num>' + _SIGN + r'[\d,，\.]+)'
-    r'\s*(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?'
-)
-
-_TABLE_ROW_RE = re.compile(
-    r'\|\s*(?P<label>[^|]{1,40})\s*\|\s*[~约]?\$?(?P<num>' + _SIGN + r'[\d,，\.]+)'
-    r'\s*(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?\s*\|'
-)
-
 
 def _clean_num(s: str) -> float:
     """把带逗号、中文逗号、各类正负号的数字字符串转为 float。
@@ -126,12 +101,6 @@ def _is_valid_label(label: str) -> bool:
         return False
     return True
 
-
-# 两列表格行：| 标签 | 数值 unit |（专为财务报告的 KV 表设计）
-_KV_TABLE_RE = re.compile(
-    r'^\|\s*(?P<label>[^|*\n]{2,40}?)\s*\|\s*[~约]?\$?(?P<num>' + _SIGN + r'[\d,，\.]+)\s*'
-    r'(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT亿])?\s*[\|（\(]'
-)
 
 # 带标签的 KV 行：标签：数值 单位
 _KV_LABEL_RE = re.compile(
@@ -340,26 +309,18 @@ def render_verdict(results: list, report_name: str = "") -> dict:
         diff1 = _pct_diff(reported, fetched)
 
         # --- 第二来源比对（如有）---
+        # 缺第二来源时不得把 pass2 当成 True：单源偏差必须打回，不能降成警告后准出。
         diff2 = None
         if fetched2 is not None:
             fetched2 = float(fetched2)
             diff2 = _pct_diff(reported, fetched2)
 
-        # 判断
         pass1 = diff1 <= _TOLERANCE
-        pass2 = (diff2 is None) or (diff2 <= _TOLERANCE)
+        has_second = diff2 is not None
+        pass2 = has_second and diff2 <= _TOLERANCE
 
-        if pass1 and pass2:
-            status = f'{GREEN}✅ 通过{RESET}'
-            detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
-            if diff2 is not None:
-                detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
-        elif not pass1 and not pass2:
-            status = f'{RED}❌ 不通过{RESET}'
-            detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
-            if diff2 is not None:
-                detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
-            fail_items.append({
+        def _fail_record():
+            return {
                 'id': item['id'],
                 'label': label,
                 'reported': reported,
@@ -372,18 +333,34 @@ def render_verdict(results: list, report_name: str = "") -> dict:
                 'diff2_pct': round(diff2 * 100, 2) if diff2 is not None else None,
                 'raw_text': item.get('raw_text', ''),
                 'line_number': item.get('line_number', 0),
-            })
-        else:
-            # 一个来源通过，一个不通过 → 警告，不计入失败
-            status = f'{YELLOW}⚠️  警告{RESET}'
+            }
+
+        if not has_second:
+            if pass1:
+                status = f'{GREEN}✅ 通过{RESET}'
+            else:
+                status = f'{RED}❌ 不通过{RESET}'
+                fail_items.append(_fail_record())
             detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
-            if diff2 is not None:
-                detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
+        elif pass1 and pass2:
+            status = f'{GREEN}✅ 通过{RESET}'
+            detail = (f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
+                      f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)')
+        elif not pass1 and not pass2:
+            status = f'{RED}❌ 不通过{RESET}'
+            detail = (f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
+                      f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)')
+            fail_items.append(_fail_record())
+        else:
+            # 两个来源都有，且恰好一个通过 → 口径警告，不计入失败
+            status = f'{YELLOW}⚠️  警告{RESET}'
+            detail = (f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
+                      f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)')
             warn_items.append({
                 'id': item['id'], 'label': label,
                 'reported': reported, 'unit': unit,
                 'diff1_pct': round(diff1 * 100, 2),
-                'diff2_pct': round(diff2 * 100, 2) if diff2 is not None else None,
+                'diff2_pct': round(diff2 * 100, 2),
             })
 
         print(f'  {status} [{item["id"]:>2}] {label[:35]:35s}  报告: {reported:>12.2f} {unit}')
@@ -400,7 +377,10 @@ def render_verdict(results: list, report_name: str = "") -> dict:
     print(f'  抽检总数: {total}  |  通过: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不通过: {RED}{fail_count}{RESET}')
     print()
 
-    if fail_count == 0:
+    if total == 0:
+        print(f'{BOLD}{RED}【打回】没有已核验的数据点（清单为空或全部未填 fetched_value），不能准出。{RESET}')
+        verdict = 'FAIL'
+    elif fail_count == 0:
         print(f'{BOLD}{GREEN}【准出】所有抽检数据通过，报告可发布。{RESET}')
         verdict = 'PASS'
     else:

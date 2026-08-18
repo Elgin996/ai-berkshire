@@ -36,6 +36,7 @@ import random
 import re
 import sys
 from datetime import datetime
+from pathlib import Path
 
 # 跨平台输出编码保护，防止 Windows 终端/管道下 Unicode 异常
 if hasattr(sys.stdout, 'reconfigure'):
@@ -208,7 +209,7 @@ async def fetch_all_timeline(page, user_id, keywords, progress_path, dump_all_pa
     all_posts = {}
     if dump_all_path and os.path.exists(dump_all_path):
         try:
-            for e in json.load(open(dump_all_path)):
+            for e in json.load(open(dump_all_path, encoding='utf-8')):
                 all_posts[e['id']] = e
             print(f"  ↪ 载入已有全量缓存：{len(all_posts)} 条")
         except Exception as e:
@@ -261,7 +262,7 @@ async def fetch_all_timeline(page, user_id, keywords, progress_path, dump_all_pa
     start_page = 2
     if os.path.exists(progress_path):
         try:
-            with open(progress_path) as f:
+            with open(progress_path, encoding='utf-8') as f:
                 prev = json.load(f)
             start_page = max(2, prev.get('next_page', 2))
             for e in prev.get('collected', []):
@@ -377,7 +378,7 @@ def parse_args():
 
 
 def filter_from_cache(cache_path, keywords, user_id):
-    posts = json.load(open(cache_path))
+    posts = json.load(open(cache_path, encoding='utf-8'))
     out = []
     for p in posts:
         if is_match((p.get('title','') + ' ' + p.get('text','')), keywords):

@@ -171,5 +171,49 @@ class TestGbkStdoutSurvival(unittest.TestCase):
             sys.stdout = orig
 
 
+class TestVerdictGate(unittest.TestCase):
+
+    def _silent(self, results):
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            return R.render_verdict(results, 'test.md')
+
+    def test_single_source_mismatch_fails(self):
+        out = self._silent([{
+            'id': 1, 'label': '营业收入', 'reported_value': 100, 'unit': '亿',
+            'fetched_value': 200, 'fetched_source': '年报',
+            'fetched_value2': None, 'fetched_source2': '',
+            'raw_text': '营业收入：100亿', 'line_number': 10,
+        }])
+        self.assertEqual(out['verdict'], 'FAIL')
+        self.assertEqual(out['fail_count'], 1)
+        self.assertEqual(out['warn_count'], 0)
+
+    def test_empty_results_fail(self):
+        out = self._silent([])
+        self.assertEqual(out['verdict'], 'FAIL')
+        self.assertEqual(out['total'], 0)
+
+    def test_unfilled_fetched_value_fails(self):
+        out = self._silent([{
+            'id': 1, 'label': '营业收入', 'reported_value': 100, 'unit': '亿',
+            'fetched_value': None, 'fetched_source': '',
+            'raw_text': '', 'line_number': 1,
+        }])
+        self.assertEqual(out['verdict'], 'FAIL')
+
+    def test_two_source_split_is_warning_not_fail(self):
+        out = self._silent([{
+            'id': 1, 'label': '营业收入', 'reported_value': 100, 'unit': '亿',
+            'fetched_value': 100, 'fetched_source': '年报',
+            'fetched_value2': 120, 'fetched_source2': 'Yahoo',
+            'raw_text': '', 'line_number': 1,
+        }])
+        self.assertEqual(out['verdict'], 'PASS')
+        self.assertEqual(out['warn_count'], 1)
+        self.assertEqual(out['fail_count'], 0)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

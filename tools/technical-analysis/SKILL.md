@@ -25,19 +25,25 @@ Execute the standalone script via your CLI/Bash execution tool:
 
 ```bash
 # 1. Standard Markdown output for A-share (e.g. 600519.SS, 300394.SZ, 688012.SH)
-python skills/technical-analysis/scripts/run_analysis.py 600519.SS
+python3 tools/technical-analysis/scripts/run_analysis.py 600519.SS
 
 # 2. Analyze Hong Kong stock (e.g. 0700.HK, 9988.HK, 3690.HK)
-python skills/technical-analysis/scripts/run_analysis.py 0700.HK
+python3 tools/technical-analysis/scripts/run_analysis.py 0700.HK
 
 # 3. Analyze Index ETF with real-time IOPV, discount rate & shares (e.g. 563360, 510300)
-python skills/technical-analysis/scripts/run_analysis.py 563360
+python3 tools/technical-analysis/scripts/run_analysis.py 563360
 
 # 4. Analyze on a historical date (Backtesting / Anti-lookahead)
-python skills/technical-analysis/scripts/run_analysis.py 300394.SZ --date 2026-08-14
+python3 tools/technical-analysis/scripts/run_analysis.py 300394.SZ --date 2026-08-14
 
 # 5. Programmatic JSON output mode (for structured agent downstream parsing)
-python skills/technical-analysis/scripts/run_analysis.py 600519.SS --format json
+python3 tools/technical-analysis/scripts/run_analysis.py 600519.SS --format json
+```
+
+Dependencies (once per environment):
+
+```bash
+pip install -r tools/technical-analysis/requirements.txt
 ```
 
 ---
