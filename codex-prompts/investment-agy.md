@@ -1,5 +1,5 @@
 ---
-description: "AI Berkshire slash entry for 投研团队（Antigravity 专版）：四大师并行深度分析框架."
+description: "AI Berkshire slash entry for 投资研究与红队压力测试框架（Antigravity 专版）."
 argument-hint: $ARGUMENTS
 ---
 
