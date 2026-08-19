@@ -55,17 +55,18 @@ pip install -r tools/technical-analysis/requirements.txt
 | `symbol` | `string` | **Yes** | - | Stock/ETF ticker (e.g. `600519.SS`, `300394.SZ`, `0700.HK`, `563360`, `NVDA`) |
 | `--date` | `string` | No | `today` | Date in `YYYY-MM-DD` format. Future rows are truncated. |
 | `--format` | `string` | No | `markdown` | Output format: `markdown` (formatted report) or `json` (raw metrics dict). |
+| `--detailed` | `flag` | No | `False` | Include full detailed technical indicators in markdown appendix. |
 | `--no-quote` | `flag` | No | `False` | Disables real-time quote snapshot fetch. |
 
 ---
 
-## Core Technical Dimensions Covered
+## Core Technical Dimensions Covered (High Signal Minimalist Kit)
 
-1. **Ground-Truth Price Table**: Real QFQ Open/High/Low/Close/Volume to prevent model hallucination.
-2. **Moving Averages (EMA 10, SMA 20, SMA 50, SMA 200)**: Trend alignment classification (Strong Bullish, Bullish, Consolidating, Bearish, Strong Bearish).
-3. **MACD**: DIF (12, 26), DEA (9), Histogram, and Golden/Death cross signal detection.
-4. **RSI (6, 14)**: Overbought (>75), Oversold (<25), and momentum zones.
-5. **Bollinger Bands (20, 2)**: Bandwidth % and channel position.
-6. **Volatility (ATR 14)**: Daily volatility in points & %, 2*ATR dynamic trailing stop-loss level.
-7. **ETF Metrics (if ETF)**: Real-time IOPV valuation, premium/discount rate %, total shares outstanding, and turnover rate.
-8. **Key Price Levels**: Nearest 3 resistance levels, 3 support levels, and suggested stop-loss level.
+1. **Ground-Truth Price Table**: Real QFQ Open/High/Low/Close/Volume and live snapshot (turnover, turnover rate, float shares/market cap).
+2. **Trend & Structural Lines (50 SMA & 200 SMA)**: Medium-term bull/bear anchor (50 SMA) and institutional long-term trendline (200 SMA).
+3. **Volume Baseline Dynamics**: Volume vs 20-day average volume (VMA20) ratio and volume surge/contraction state.
+4. **Volume Profile (VPVR - 90 Days)**: Point of Control (POC) price cluster, overhead trapped supply %, and support shelf %.
+5. **Sentiment Filter (RSI 14)**: Objective FOMO prevention (>70) and panic-selling protection (<30).
+6. **Volatility & Squeeze (ATR 14 & Bollinger Bandwidth)**: Daily ATR % and Bollinger bandwidth squeeze (pre-breakout consolidation).
+7. **ETF Structure Facts**: Real-time IOPV valuation, premium/discount rate %, total shares, and turnover rate.
+8. **Swing Risk Reference (2*ATR)**: Dynamic trailing reference for short-term swing trades (not mechanical stop for core value holdings).
