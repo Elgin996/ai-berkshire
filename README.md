@@ -654,6 +654,7 @@ REM 可选：安装 Codex slash prompts
 | 腾讯控股 (0700.HK) | `/investment-research` | 社交垄断+资本配置卓越，14x前瞻PE合理偏低 | [查看报告](reports/腾讯/) |
 | 7家公司对比 | `/investment-checklist` | 茅台、腾讯通过；英伟达、美团、快手有条件通过；拼多多、泡泡玛特灰色 | [查看报告](reports/多公司对比-checklist-20260408.md) |
 | 大师持仓追踪 | 自定义研究 | 巴菲特/李录/段永平最新13F持仓+PDD成本分析 | [查看报告](reports/大师持仓追踪-research-20260408.md) |
+| 折扣零售产业链 | `/industry-research` | 逻辑链6环中2环已证伪（尾货供给枯竭、线上量价齐升）；最佳环节是奥莱物业与消费REITs而非线上特卖平台 | [查看报告](reports/折扣零售产业链/) |
 
 > *更多报告将持续添加。欢迎 PR 提交你用本框架生成的研究报告。*
 
