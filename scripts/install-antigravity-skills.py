@@ -12,7 +12,7 @@ if hasattr(sys.stdout, "reconfigure"):
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CODEX_SKILLS_DIR = os.path.join(ROOT_DIR, "codex-skills")
 
-TARGET_SKILLS = ["investment-agy", "technical-analysis"]
+TARGET_SKILLS = ["investment-agy", "technical-analysis", "consensus-valuation"]
 
 def install_skills():
     # 1. Project Workspace: .agents/skills/
