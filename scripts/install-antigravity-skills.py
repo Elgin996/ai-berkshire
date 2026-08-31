@@ -22,20 +22,12 @@ def install_skills():
     # 2. Global Antigravity Config: ~/.gemini/config/skills/
     global_gemini_skills = os.path.expanduser("~/.gemini/config/skills")
     os.makedirs(global_gemini_skills, exist_ok=True)
-    
-    # 3. Global Codex Skills: ~/.codex/skills/
-    global_codex_skills = os.path.expanduser("~/.codex/skills")
-    os.makedirs(global_codex_skills, exist_ok=True)
 
-    # 4. Global Agents Skills: ~/.agents/skills/
-    global_agents_skills = os.path.expanduser("~/.agents/skills")
-    os.makedirs(global_agents_skills, exist_ok=True)
-
-    # 5. Global Antigravity Skills: ~/.gemini/antigravity/skills/
+    # 3. Global Antigravity AppData: ~/.gemini/antigravity/skills/
     global_agy_skills = os.path.expanduser("~/.gemini/antigravity/skills")
     os.makedirs(global_agy_skills, exist_ok=True)
 
-    print("=== 开始安装 Skills 到本地工作区和所有 Antigravity 全局目录 ===")
+    print("=== 开始安装 Skills 到本地工作区和 Google Antigravity 全局环境 ===")
 
     # Ensure consensus-valuation has bundled scripts
     cv_scripts_dir = os.path.join(CODEX_SKILLS_DIR, "consensus-valuation", "scripts")
@@ -51,11 +43,9 @@ def install_skills():
             continue
 
         targets = [
-            ("Workspace", os.path.join(workspace_agents_dir, skill_name)),
-            ("Global Gemini Config", os.path.join(global_gemini_skills, skill_name)),
-            ("Global Codex", os.path.join(global_codex_skills, skill_name)),
-            ("Global Agents", os.path.join(global_agents_skills, skill_name)),
-            ("Global Antigravity AppData", os.path.join(global_agy_skills, skill_name)),
+            ("Workspace (.agents/skills)", os.path.join(workspace_agents_dir, skill_name)),
+            ("Global Antigravity Config (~/.gemini/config/skills)", os.path.join(global_gemini_skills, skill_name)),
+            ("Global Antigravity AppData (~/.gemini/antigravity/skills)", os.path.join(global_agy_skills, skill_name)),
         ]
 
         for label, dst in targets:
@@ -64,7 +54,7 @@ def install_skills():
             shutil.copytree(src, dst)
             print(f"✅ [{label}] 已安装: {dst}")
 
-    print("\n🎉 全局安装完成！Antigravity 在所有工作区及系统全局环境中均可随时直接发现并调用 consensus-valuation。")
+    print("\n🎉 安装完成！Skills 已成功部署至 Google Antigravity 专用全局与工作区环境。")
 
 if __name__ == "__main__":
     install_skills()
