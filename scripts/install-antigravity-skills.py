@@ -27,7 +27,22 @@ def install_skills():
     global_codex_skills = os.path.expanduser("~/.codex/skills")
     os.makedirs(global_codex_skills, exist_ok=True)
 
-    print("=== 开始安装 Skills: investment-agy & technical-analysis ===")
+    # 4. Global Agents Skills: ~/.agents/skills/
+    global_agents_skills = os.path.expanduser("~/.agents/skills")
+    os.makedirs(global_agents_skills, exist_ok=True)
+
+    # 5. Global Antigravity Skills: ~/.gemini/antigravity/skills/
+    global_agy_skills = os.path.expanduser("~/.gemini/antigravity/skills")
+    os.makedirs(global_agy_skills, exist_ok=True)
+
+    print("=== 开始安装 Skills 到本地工作区和所有 Antigravity 全局目录 ===")
+
+    # Ensure consensus-valuation has bundled scripts
+    cv_scripts_dir = os.path.join(CODEX_SKILLS_DIR, "consensus-valuation", "scripts")
+    os.makedirs(cv_scripts_dir, exist_ok=True)
+    src_tool = os.path.join(ROOT_DIR, "tools", "multi_source_valuation.py")
+    if os.path.isfile(src_tool):
+        shutil.copy2(src_tool, os.path.join(cv_scripts_dir, "multi_source_valuation.py"))
     
     for skill_name in TARGET_SKILLS:
         src = os.path.join(CODEX_SKILLS_DIR, skill_name)
@@ -35,28 +50,21 @@ def install_skills():
             print(f"❌ 找不到源技能目录: {src}")
             continue
 
-        # Copy to Workspace .agents/skills/
-        dst_workspace = os.path.join(workspace_agents_dir, skill_name)
-        if os.path.exists(dst_workspace):
-            shutil.rmtree(dst_workspace)
-        shutil.copytree(src, dst_workspace)
-        print(f"✅ [Workspace] 已安装到工作区: {dst_workspace}")
+        targets = [
+            ("Workspace", os.path.join(workspace_agents_dir, skill_name)),
+            ("Global Gemini Config", os.path.join(global_gemini_skills, skill_name)),
+            ("Global Codex", os.path.join(global_codex_skills, skill_name)),
+            ("Global Agents", os.path.join(global_agents_skills, skill_name)),
+            ("Global Antigravity AppData", os.path.join(global_agy_skills, skill_name)),
+        ]
 
-        # Copy to Global ~/.gemini/config/skills/
-        dst_gemini = os.path.join(global_gemini_skills, skill_name)
-        if os.path.exists(dst_gemini):
-            shutil.rmtree(dst_gemini)
-        shutil.copytree(src, dst_gemini)
-        print(f"✅ [Global Gemini/Antigravity] 已安装到全局配置: {dst_gemini}")
+        for label, dst in targets:
+            if os.path.exists(dst):
+                shutil.rmtree(dst)
+            shutil.copytree(src, dst)
+            print(f"✅ [{label}] 已安装: {dst}")
 
-        # Copy to Global ~/.codex/skills/
-        dst_codex = os.path.join(global_codex_skills, skill_name)
-        if os.path.exists(dst_codex):
-            shutil.rmtree(dst_codex)
-        shutil.copytree(src, dst_codex)
-        print(f"✅ [Global Codex] 已安装到 Codex 全局目录: {dst_codex}")
-
-    print("\n🎉 安装完成！Antigravity 在当前工作区以及全局环境中均可随时发现并调用这两项 Skill。")
+    print("\n🎉 全局安装完成！Antigravity 在所有工作区及系统全局环境中均可随时直接发现并调用 consensus-valuation。")
 
 if __name__ == "__main__":
     install_skills()
