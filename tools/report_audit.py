@@ -127,8 +127,8 @@ def _parse_md_tables(lines: list) -> list:
                     dline = lines[i].strip()
                     if not dline or not dline.startswith('|'):
                         break
-                    # 跳过包含评分星级、Checklist与定性审查行
-                    if '⭐' in dline or '/5.0' in dline or '/ 5.0' in dline or '✅' in dline or '❌' in dline or '⚠️' in dline:
+                    # 跳过评分星级行（整行都是定性打分）
+                    if '⭐' in dline or '/5.0' in dline or '/ 5.0' in dline:
                         i += 1
                         continue
                     cells = [c.strip() for c in dline.split('|')]
@@ -140,7 +140,13 @@ def _parse_md_tables(lines: list) -> list:
                     for col_idx, cell in enumerate(cells[1:], start=1):
                         col_header = headers_raw[col_idx] if col_idx < len(headers_raw) else f'列{col_idx}'
                         col_header_clean = re.sub(r'[\*_`~]+', '', col_header).strip()
-                        cell_clean = re.sub(r'[\*_`~]+', '', cell).strip()
+                        # 只去掉强调符与删除线；单个 ~ 只在首尾剥离，中间的 ~ 是区间（15~20x）
+                        cell_clean = re.sub(r'~~|[\*_`]+', '', cell).strip().strip('~').strip()
+                        # 状态格（✅/❌/⚠️）与区间值（15~20x、15-20%）不是可核验的单点数据
+                        if any(mark in cell_clean for mark in ('✅', '❌', '⚠️')):
+                            continue
+                        if re.search(r'\d\s*[~～\-–—至到]\s*' + _SIGN + r'\d', cell_clean):
+                            continue
                         # 提取 cell 中的数字+单位
                         m = re.search(
                             r'[~约]?\$?￥?(' + _SIGN + r'[\d,，\.]+)\s*'
@@ -289,6 +295,7 @@ def render_verdict(results: list, report_name: str = "") -> dict:
 
     fail_items = []
     warn_items = []
+    unchecked_items = []
 
     for item in results:
         label = item.get('label', '?')
@@ -301,8 +308,9 @@ def render_verdict(results: list, report_name: str = "") -> dict:
 
         # --- 主来源比对 ---
         if fetched is None:
-            # 没有提供核验值 → 跳过（不计入通过/失败）
-            print(f'  ⬜ [{item["id"]:>2}] {label[:35]:35s} {reported:>12.2f} {unit}  →  [未提供核验值，跳过]')
+            # 没有提供核验值 → 记为未核验；抽检样本必须全部核验才能准出
+            print(f'  ⬜ [{item["id"]:>2}] {label[:35]:35s} {reported:>12.2f} {unit}  →  [未提供核验值]')
+            unchecked_items.append(item)
             continue
 
         fetched = float(fetched)
@@ -374,11 +382,17 @@ def render_verdict(results: list, report_name: str = "") -> dict:
     warn_count = len(warn_items)
     pass_count = total - fail_count - warn_count
 
-    print(f'  抽检总数: {total}  |  通过: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不通过: {RED}{fail_count}{RESET}')
+    unchecked_count = len(unchecked_items)
+
+    print(f'  抽检总数: {total}  |  通过: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不通过: {RED}{fail_count}{RESET}  |  未核验: {unchecked_count}')
     print()
 
     if total == 0:
         print(f'{BOLD}{RED}【打回】没有已核验的数据点（清单为空或全部未填 fetched_value），不能准出。{RESET}')
+        verdict = 'FAIL'
+    elif unchecked_count > 0 and fail_count == 0:
+        ids = ', '.join(str(u.get('id', '?')) for u in unchecked_items)
+        print(f'{BOLD}{RED}【打回】{unchecked_count} 个抽检点未填 fetched_value（id: {ids}），抽检未完成，不能准出。{RESET}')
         verdict = 'FAIL'
     elif fail_count == 0:
         print(f'{BOLD}{GREEN}【准出】所有抽检数据通过，报告可发布。{RESET}')
@@ -409,6 +423,7 @@ def render_verdict(results: list, report_name: str = "") -> dict:
         'pass_count': pass_count,
         'warn_count': warn_count,
         'fail_count': fail_count,
+        'unchecked_count': unchecked_count,
         'total': total,
         'fail_items': fail_items,
         'warn_items': warn_items,

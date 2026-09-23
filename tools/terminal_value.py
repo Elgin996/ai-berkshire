@@ -285,13 +285,15 @@ def cmd_company(args):
     for row, p in zip(rows, spec["p"]):
         pe = f"{row['pe']:.1f}x" if row["pe"] else "—"
         irr = f"{row['irr']:+.1f}%" if row["irr"] is not None else "—"
-        print(f"{row['label']:<6}{p:>6.0%}{row['g']:>8.1%}{row['retention']:>8.1%}"
-              f"{row['numerator']:>8.3f}{row['spread']*100:>7.1f}pct{pe:>9}{irr:>9}  {warn_spread(row['spread'])}")
+        retention = f"{row['retention']:.1%}" if row["retention"] is not None else "—"
+        numerator = f"{row['numerator']:.3f}" if row["numerator"] is not None else "—"
+        print(f"{row['label']:<6}{p:>6.0%}{row['g']:>8.1%}{retention:>8}"
+              f"{numerator:>8}{row['spread']*100:>7.1f}pct{pe:>9}{irr:>9}  {warn_spread(row['spread'])}")
 
     mean, sd, ratio = summarize(rows, spec["p"], rf)
     print("-" * 74)
     if mean is None:
-        print("\n期望值不可用：至少一档的分母 <= 0。\n")
+        print("\n期望值不可用：至少一档模型失效（分母 <= 0 或 ROIC = 0）。\n")
         return 1
     print(f"{'期望IRR':<12}{mean:+.2f}%      标准差 {sd:.1f}%      风险调整后 {ratio:+.2f}\n")
     narrow = [r_["label"] for r_ in rows if 0 < r_["spread"] < MIN_SPREAD]
@@ -458,6 +460,8 @@ def cmd_audit(args):
         print(f"     {label}  g={g:>5.1%}  r-g={spread*100:>4.1f}pct  PE={pe_s:>10}{delta}  {tag}")
         if spread <= 0:
             fails.append(f"C2: {label}档 r-g={spread*100:.1f}pct <= 0，模型失效")
+        elif pe is None:
+            fails.append(f"C2: {label}档 ROIC = 0，留存率 g/ROIC 无定义，模型失效")
         elif spread < MIN_SPREAD:
             narrow.append(label)
     if narrow:

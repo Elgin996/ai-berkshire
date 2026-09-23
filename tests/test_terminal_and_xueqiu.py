@@ -29,5 +29,18 @@ class TestXueqiuImports(unittest.TestCase):
         self.assertIs(X.Path, Path)
 
 
+class TestTerminalAuditRoicZero(unittest.TestCase):
+
+    def test_audit_rejects_roic_zero(self):
+        import subprocess
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tools', 'terminal_value.py')
+        proc = subprocess.run(
+            [sys.executable, script, 'audit', '--currency', 'USD', '--r', '0.09', '--roic', '0',
+             '--g', '0.01,0.02,0.03', '--discrete-risks', '监管:情景'],
+            capture_output=True, text=True, encoding='utf-8')
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('ROIC = 0', proc.stdout)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

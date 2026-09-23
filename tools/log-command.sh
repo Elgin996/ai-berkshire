@@ -17,7 +17,7 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 printf '%s' "$PROMPT" | python3 -c '
 import json, sys
 ts, path = sys.argv[1], sys.argv[2]
-prompt = sys.stdin.read()[:200].replace("\n", " ")
+prompt = sys.stdin.buffer.read().decode("utf-8", "replace")[:200].replace("\n", " ")
 with open(path, "a", encoding="utf-8") as f:
     f.write(json.dumps({"time": ts, "prompt": prompt}, ensure_ascii=False) + "\n")
 ' "$TIMESTAMP" "$LOG_FILE"

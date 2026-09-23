@@ -133,7 +133,7 @@ This skill is generated from `skills/investment-agy.md` so Claude Code and Codex
      * 市值验算：`python3 tools/financial_rigor.py verify-market-cap --price {价格} --shares {股本} --reported {市值} --currency {币种}`
      * 估值指标验算：`python3 tools/financial_rigor.py verify-valuation --price {价格} --eps {EPS} --bvps {每股净资产}`
      * 估值情景推演：`python3 tools/financial_rigor.py three-scenario --price {价格} --eps {EPS} --shares {总股本} --growth {乐观} {中性} {悲观} --pe {乐观PE} {中性PE} {悲观PE}`
-     * 十年期硬约束审计：`python3 tools/terminal_value.py audit`（校验 C1 同币种、C2 增长约束、C3 离散风险）。
+     * 十年期硬约束审计：`python3 tools/terminal_value.py audit --currency {币种} --r {资本成本} --roic {稳态ROIC} --g {悲观g},{基准g},{乐观g} --discrete-risks {风险名}:情景`（校验 C1 币种与 r/g 口径、C2 分母 r-g 宽度、C3 离散风险归属；退出码非 0 即打回）。
    * **核心追问**：如果股市关闭 5 年，单靠企业产生的自由现金流分红/回购，能否带来满意的回报？
 
 3. **行业与竞争分析师 (Industry & Competition Researcher · 芒格清单)**：

@@ -215,5 +215,37 @@ class TestVerdictGate(unittest.TestCase):
         self.assertEqual(out['fail_count'], 0)
 
 
+class TestTableCellExtraction(unittest.TestCase):
+
+    def _values(self, row):
+        md = "| 指标 | 数值 | 评价 |\n|---|---|---|\n" + row + "\n"
+        return {(p['reported_value'], p['unit']) for p in R.extract_data_points(md)}
+
+    def test_range_cell_is_not_merged(self):
+        """15~20x 是区间，不能被拼成 1520。"""
+        self.assertNotIn((1520.0, 'x'), self._values("| 目标PE | 15~20x | 合理 |"))
+
+    def test_status_mark_does_not_drop_row(self):
+        """同一行带 ✅ 状态格时，数值格仍要抽出来。"""
+        self.assertIn((91.5, '%'), self._values("| 毛利率 | 91.5% | ✅ 优秀 |"))
+
+    def test_leading_tilde_still_parsed(self):
+        self.assertIn((12.3, 'x'), self._values("| 市盈率 | ~12.3x | 约数 |"))
+
+
+class TestPartialSampleGate(unittest.TestCase):
+
+    def test_partially_filled_sample_fails(self):
+        import contextlib
+        results = [{'id': 1, 'label': 'a', 'reported_value': 10, 'unit': '',
+                    'fetched_value': 10, 'fetched_source': '年报'}]
+        results += [{'id': i, 'label': 'b', 'reported_value': 5, 'unit': '',
+                     'fetched_value': None} for i in range(2, 21)]
+        with contextlib.redirect_stdout(io.StringIO()):
+            out = R.render_verdict(results, 'test.md')
+        self.assertEqual(out['verdict'], 'FAIL')
+        self.assertEqual(out['unchecked_count'], 19)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -377,26 +377,35 @@ def compute_all_indicators(df_input: pd.DataFrame) -> tuple[pd.DataFrame, dict[s
     prev_close_val = float(prev.get("close", prev.get("Close")))
     price_change_pct = ((close_val - prev_close_val) / prev_close_val * 100) if prev_close_val > 0 else 0.0
 
+    # 描述里写出的阈值必须与实际触发的分支一致
+    expanded = vol_ratio_5 >= 1.2 or vol_ratio_20 >= 1.2
+    if vol_ratio_5 >= 1.2:
+        expand_basis = f"5日量比={vol_ratio_5} ≥ 1.2"
+    else:
+        expand_basis = f"20日量比={vol_ratio_20} ≥ 1.2"
+    quiet_basis = f"5日量比={vol_ratio_5}、20日量比={vol_ratio_20} 均 < 1.2"
+    quiet_word = "缩量" if max(vol_ratio_5, vol_ratio_20) < 1.0 else "平量"
+
     if price_change_pct >= 2.0:
-        if vol_ratio_5 >= 1.2 or vol_ratio_20 >= 1.2:
-            vp_desc = f"放量拉升 (+{price_change_pct:.2f}%, 量比={vol_ratio_5} > 1.2, 多头资金主动进攻)"
+        if expanded:
+            vp_desc = f"放量拉升 (+{price_change_pct:.2f}%, {expand_basis}, 多头资金主动进攻)"
             vp_state = "Volume Breakout"
         else:
-            vp_desc = f"缩量推升 / 量价顶背离 (+{price_change_pct:.2f}%, 量比={vol_ratio_5} < 1.0, 呈缩量推升特征，谨防冲高回落)"
+            vp_desc = f"{quiet_word}推升 / 量价顶背离 (+{price_change_pct:.2f}%, {quiet_basis}, 量能未配合，谨防冲高回落)"
             vp_state = "Volume Divergence"
     elif price_change_pct <= -2.0:
-        if vol_ratio_5 >= 1.2 or vol_ratio_20 >= 1.2:
-            vp_desc = f"放量下挫 ({price_change_pct:.2f}%, 量比={vol_ratio_5} > 1.2, 空头抛压沉重)"
+        if expanded:
+            vp_desc = f"放量下挫 ({price_change_pct:.2f}%, {expand_basis}, 空头抛压沉重)"
             vp_state = "Volume Selloff"
         else:
-            vp_desc = f"缩量回调 ({price_change_pct:.2f}%, 量比={vol_ratio_5} < 1.0, 属缩量良性洗盘)"
+            vp_desc = f"{quiet_word}回调 ({price_change_pct:.2f}%, {quiet_basis}, 抛压未放大)"
             vp_state = "Low Volume Pullback"
     else:
         if vol_ratio_5 < 0.7:
-            vp_desc = f"极致地量整理 (量比={vol_ratio_5} < 0.7, 市场观望情绪浓厚，等待方向选择)"
+            vp_desc = f"极致地量整理 (5日量比={vol_ratio_5} < 0.7, 市场观望情绪浓厚，等待方向选择)"
             vp_state = "Extremely Low Volume"
         else:
-            vp_desc = f"温和震荡换手 (量比={vol_ratio_5}, 量价相对平稳)"
+            vp_desc = f"温和震荡换手 (5日量比={vol_ratio_5}, 量价相对平稳)"
             vp_state = "Normal Volume Consolidation"
 
     summary = {

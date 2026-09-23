@@ -136,5 +136,35 @@ class TestStripValueUnits(unittest.TestCase):
         self.assertEqual(F.strip_value_units('7518亿'), '7518')
 
 
+class TestScaledValueParsing(unittest.TestCase):
+
+    def test_scale_words_rescale(self):
+        self.assertEqual(F.parse_scaled_value('1.5万'), F.exact('15000'))
+        self.assertEqual(F.parse_scaled_value('1.5亿'), F.exact('150000000'))
+        self.assertEqual(F.parse_scaled_value('2.3万亿'), F.exact('2.3e12'))
+        self.assertEqual(F.parse_scaled_value('7,518亿元'), F.exact('751800000000'))
+
+    def test_currency_suffixes(self):
+        self.assertEqual(F.parse_scaled_value('100美元'), F.exact('100'))
+        self.assertEqual(F.parse_scaled_value('100HKD'), F.exact('100'))
+
+
+class TestCrossValidatePairs(unittest.TestCase):
+
+    def _run(self, pairs):
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tools', 'financial_rigor.py')
+        return subprocess.run([sys.executable, script, 'cross-validate', '--field', 'x', '--pairs', pairs],
+                              capture_output=True, text=True, encoding='utf-8')
+
+    def test_thousands_separator_kept(self):
+        out = self._run('年报=7,518,Yahoo=7500').stdout
+        self.assertIn('7,518.00', out)
+        self.assertIn('数据一致', out)
+
+    def test_different_scales_flagged(self):
+        out = self._run('年报=1.5万,Yahoo=1.5亿').stdout
+        self.assertNotIn('数据一致', out)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

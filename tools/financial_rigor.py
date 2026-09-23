@@ -29,7 +29,7 @@ _NUM_TOKEN_RE = re.compile(
 _UNIT_SUFFIXES = (
     "亿美元", "亿港元", "亿人民币", "亿元", "亿",
     "万元", "万",
-    "港币", "港元", "人民币", "元",
+    "港币", "港元", "人民币", "美元", "新台币", "台币", "日元", "元",
     "HKD", "USD", "CNY", "RMB", "TWD", "JPY",
     "%", "％",
 )
@@ -71,6 +71,33 @@ def strip_value_units(raw: str) -> str:
                 changed = True
                 break
     return s
+
+
+# 量级后缀：剥离时必须同步换算，否则 1.5万 与 1.5亿 会被当成同一个数
+_SCALE_CHARS = {"亿": Decimal("1e8"), "万": Decimal("1e4")}
+
+
+def parse_scaled_value(raw: str) -> Decimal:
+    """Parse '1.5亿' / '7,518亿元' / '2.3万亿' / '100美元' into an exact Decimal in base units.
+
+    万/亿 are scale words, not labels: stripping them without rescaling makes
+    values 10,000x apart compare as equal.
+    """
+    s = raw.replace(",", "").replace("，", "").strip()
+    scale = Decimal(1)
+    changed = True
+    while changed and s:
+        changed = False
+        for suf in _UNIT_SUFFIXES:
+            if s.endswith(suf) or (suf.isascii() and s[-len(suf):].upper() == suf.upper()):
+                for ch, mult in _SCALE_CHARS.items():
+                    scale *= mult ** suf.count(ch)
+                s = s[: -len(suf)].strip()
+                changed = True
+                break
+    s = s.lstrip("$¥￥").strip()
+    return Decimal(s) * scale
+
 
 _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
 
@@ -518,18 +545,19 @@ Examples:
                 values = json.load(f)
         elif args.pairs:
             # 解析 "来源1=数值1,来源2=数值2" 或 "来源1:数值1,来源2:数值2"
-            raw_pairs = [p.strip() for p in re.split(r'[,，]', args.pairs) if p.strip()]
+            # 只在"逗号后紧跟 来源= / 来源:"处切分，保住千分位（7,518）
+            raw_pairs = [p.strip() for p in re.split(r'[,，]\s*(?=[^,，=:：]+[=:：])', args.pairs) if p.strip()]
             for p in raw_pairs:
                 if "=" in p:
                     k, v = p.split("=", 1)
                 elif ":" in p or "：" in p:
                     k, v = re.split(r'[:：]', p, maxsplit=1)
                 else:
-                    continue
-                v_clean = strip_value_units(v)
+                    print(f"❌ 无法解析键值对: {p}（格式应为 来源=数值）", file=sys.stderr)
+                    sys.exit(1)
                 try:
-                    values[k.strip()] = float(v_clean)
-                except ValueError:
+                    values[k.strip()] = float(parse_scaled_value(v))
+                except (ValueError, ArithmeticError):
                     print(f"❌ 无法解析数值: {v}", file=sys.stderr)
                     sys.exit(1)
         elif args.values:

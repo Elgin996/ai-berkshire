@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -196,8 +197,10 @@ def main():
         _, summary = compute_all_indicators(df)
 
         # 3. Fetch Real-time quote snapshot if available
+        # 实时快照只属于今天：历史 --date 报告混入今日成交额/换手率就是未来函数
         quote_info = {}
-        if not args.no_quote and sym_info["market"] in ("CN", "HK"):
+        is_historical = bool(args.date) and args.date != datetime.date.today().strftime("%Y-%m-%d")
+        if not args.no_quote and not is_historical and sym_info["market"] in ("CN", "HK"):
             try:
                 quote_info = fetch_tencent_quote(sym_info["tencent_symbol"])
             except (requests.RequestException, ValueError, KeyError):

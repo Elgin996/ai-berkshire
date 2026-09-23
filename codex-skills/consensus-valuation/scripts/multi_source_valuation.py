@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 # Set default encoding for Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 COMMON_HEADERS = {
     "User-Agent": (
@@ -46,10 +47,15 @@ def safe_urlopen(url: str, headers: Optional[Dict[str, str]] = None, timeout: in
         return resp.read().decode("utf-8", errors="ignore")
 
 
+def yahoo_symbol(ticker: str) -> str:
+    """Yahoo writes share classes with '-' (BRK-B), not '.' (BRK.B)."""
+    return ticker.upper().replace(".", "-")
+
+
 def get_company_name_from_yahoo(ticker: str) -> str:
     """Extract standard company name for smart Morningstar lookup."""
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}?interval=1d&range=1d"
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}?interval=1d&range=1d"
         meta = json.loads(safe_urlopen(url, timeout=8))["chart"]["result"][0]["meta"]
         return meta.get("shortName") or meta.get("longName") or ""
     except Exception:
@@ -209,7 +215,7 @@ def fetch_yahoo_finance(ticker: str) -> Dict[str, Any]:
         "data_date": datetime.date.today().strftime("%Y-%m-%d"),
     }
     try:
-        chart_url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker.upper()}?interval=1d&range=5d"
+        chart_url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol(ticker)}?interval=1d&range=5d"
         chart_json = json.loads(safe_urlopen(chart_url, timeout=10))
         meta = chart_json["chart"]["result"][0]["meta"]
         result["current_price"] = meta.get("regularMarketPrice")
@@ -218,7 +224,7 @@ def fetch_yahoo_finance(ticker: str) -> Dict[str, Any]:
         result["fifty_two_week_low"] = meta.get("fiftyTwoWeekLow")
         result["currency"] = meta.get("currency", "USD")
 
-        quote_url = f"https://finance.yahoo.com/quote/{ticker.upper()}/"
+        quote_url = f"https://finance.yahoo.com/quote/{yahoo_symbol(ticker)}/"
         html = safe_urlopen(quote_url, timeout=12)
 
         m_target = re.search(r'data-field="targetPrice"[^>]*data-value="([0-9\.,]+)"', html)
@@ -237,7 +243,7 @@ def fetch_yahoo_finance(ticker: str) -> Dict[str, Any]:
         if m_mcap:
             result["market_cap"] = m_mcap.group(1)
 
-        stat_url = f"https://finance.yahoo.com/quote/{ticker.upper()}/key-statistics/"
+        stat_url = f"https://finance.yahoo.com/quote/{yahoo_symbol(ticker)}/key-statistics/"
         stat_html = safe_urlopen(stat_url, timeout=12)
         
         for row in re.findall(r'<tr[^>]*>(.*?)</tr>', stat_html, re.DOTALL):
@@ -324,6 +330,9 @@ def fetch_marketbeat(ticker: str) -> Dict[str, Any]:
 # ==============================================================================
 # 5. TipRanks Scraper / API
 # ==============================================================================
+TIPRANKS_CONSENSUS = {5: "Strong Buy", 4: "Moderate Buy", 3: "Hold", 2: "Moderate Sell", 1: "Strong Sell"}
+
+
 def fetch_tipranks(ticker: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "source": "TipRanks",
@@ -345,7 +354,8 @@ def fetch_tipranks(ticker: str) -> Dict[str, Any]:
             
         score_obj = data.get("tipranksStockScore")
         if isinstance(score_obj, dict):
-            result["smart_score"] = score_obj.get("score", 9)
+            if isinstance(score_obj.get("score"), (int, float)):
+                result["smart_score"] = score_obj["score"]
         elif isinstance(score_obj, (int, float)):
             result["smart_score"] = score_obj
         
@@ -357,15 +367,9 @@ def fetch_tipranks(ticker: str) -> Dict[str, Any]:
                 "hold": latest.get("hold", 0),
                 "sell": latest.get("sell", 0),
             }
-            code = latest.get("consensus")
-            if code == 5:
-                result["consensus_rating"] = "Strong Buy"
-            elif code == 4:
-                result["consensus_rating"] = "Moderate Buy"
-            elif code == 3:
-                result["consensus_rating"] = "Hold"
-            else:
-                result["consensus_rating"] = "Moderate Sell / Sell"
+            rating = TIPRANKS_CONSENSUS.get(latest.get("consensus"))
+            if rating:
+                result["consensus_rating"] = rating
 
         if "target_avg" in result:
             result["status"] = "success"
@@ -379,6 +383,19 @@ def fetch_tipranks(ticker: str) -> Dict[str, Any]:
 # ==============================================================================
 # 6. Seeking Alpha Scraper
 # ==============================================================================
+def sa_rating_label(score: float) -> str:
+    """Seeking Alpha 1-5 rating scale → label (1 = Strong Sell, 5 = Strong Buy)."""
+    if score >= 4.5:
+        return "Strong Buy"
+    if score >= 3.5:
+        return "Buy"
+    if score >= 2.5:
+        return "Hold"
+    if score >= 1.5:
+        return "Sell"
+    return "Strong Sell"
+
+
 def fetch_seekingalpha(ticker: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "source": "Seeking Alpha",
@@ -423,9 +440,12 @@ def fetch_seekingalpha(ticker: str) -> Dict[str, Any]:
             for item in tmf:
                 field = item.get("metricType", {}).get("field")
                 val = item.get("value")
-                if field == "sell_side_rating":
+                if field == "sell_side_rating" and isinstance(val, (int, float)):
                     result["wall_street_rating_score"] = val
-                    result["wall_street_consensus"] = "Strong Buy" if val >= 4.5 else ("Buy" if val >= 3.5 else "Hold")
+                    result["wall_street_consensus"] = sa_rating_label(val)
+                elif field == "authors_rating" and isinstance(val, (int, float)):
+                    result["author_rating_score"] = val
+                    result["author_consensus"] = sa_rating_label(val)
                 elif field == "sell_side_rating_strong_buy_count":
                     result.setdefault("wall_street_counts", {})["strong_buy"] = val
                 elif field == "sell_side_rating_buy_count":
@@ -459,7 +479,7 @@ def analyze_ticker(ticker: str, custom_date: Optional[str] = None) -> Dict[str, 
     mb = fetch_marketbeat(ticker)
     tr = fetch_tipranks(ticker)
 
-    ref_price = yf.get("current_price") or yf.get("previous_close") or ms.get("close_price") or 0.0
+    ref_price = float(yf.get("current_price") or yf.get("previous_close") or ms.get("close_price") or 0.0)
 
     targets: Dict[str, float] = {}
     if ms.get("analyst_fair_value"):
@@ -478,11 +498,9 @@ def analyze_ticker(ticker: str, custom_date: Optional[str] = None) -> Dict[str, 
     target_values = list(targets.values())
     consensus_median = 0.0
     consensus_mean = 0.0
-    implied_upside = 0.0
+    implied_upside: Optional[float] = None
 
-    if not target_values:
-        verdict = "Insufficient Data / No Coverage (数据不足/暂无覆盖)"
-    else:
+    if target_values:
         sorted_vals = sorted(target_values)
         mid = len(sorted_vals) // 2
         consensus_median = sorted_vals[mid] if len(sorted_vals) % 2 != 0 else (sorted_vals[mid-1] + sorted_vals[mid]) / 2.0
@@ -490,6 +508,11 @@ def analyze_ticker(ticker: str, custom_date: Optional[str] = None) -> Dict[str, 
         if ref_price > 0:
             implied_upside = round((consensus_median - ref_price) / ref_price * 100, 2)
 
+    if not target_values:
+        verdict = "Insufficient Data / No Coverage (数据不足/暂无覆盖)"
+    elif implied_upside is None:
+        verdict = "Insufficient Data / No Reference Price (数据不足/缺少参考股价)"
+    else:
         if implied_upside >= 25.0:
             verdict = "Significantly Undervalued (显著低估)"
         elif implied_upside >= 10.0:
@@ -541,10 +564,12 @@ def generate_markdown_report(data: Dict[str, Any]) -> str:
     low_52w = data.get("52w_low") or 0.0
     high_52w = data.get("52w_high") or 0.0
 
+    upside_str = f"{upside:+.2f}%" if upside is not None else "N/A"
+
     lines = []
     lines.append(f"# {ticker} 多源公允价值与估值共识调研报告 (Multi-Source Valuation)")
     lines.append(f"\n> **数据基准日期**: `{date_str}` | **基准股价**: `\\${price:,.2f}` | **52周区间**: `\\${low_52w:,.2f} – \\${high_52w:,.2f}`")
-    lines.append(f"> **估值核心结论**: **{verdict}** (共识目标中位数: `\\${median_target:,.2f}`, 潜在空间: `{upside:+.2f}%`)\n")
+    lines.append(f"> **估值核心结论**: **{verdict}** (共识目标中位数: `\\${median_target:,.2f}`, 潜在空间: `{upside_str}`)\n")
 
     lines.append("## 1. 六大权威数据源交叉对比表 (Cross-Platform Comparison Table)\n")
     lines.append("| 数据来源 (Source) | 评级 / 护城河共识 | 目标价 / 公允价值 (Target) | 隐含涨跌幅 (Upside) | 核心估值乘数 / 指标 | 数据日期 |")
@@ -566,8 +591,9 @@ def generate_markdown_report(data: Dict[str, Any]) -> str:
     sa_fwd_pe = sa.get("fwd_pe_nongaap", "N/A")
     sa_peg = sa.get("fwd_peg", "N/A")
     sa_pe_disc = sa.get("pe_discount_5y", "N/A")
+    sa_author = sa.get("author_consensus", "N/A")
     lines.append(
-        f"| **Seeking Alpha** | 华尔街: **{sa_ws}**<br>SA作者: **Buy** | 华尔街共识评级 | "
+        f"| **Seeking Alpha** | 华尔街: **{sa_ws}**<br>SA作者: **{sa_author}** | 未提供目标价 | "
         f"估值折价: **{sa_pe_disc}** | FWD P/E: `{sa_fwd_pe}x`<br>FWD PEG: `{sa_peg}` | {sa.get('data_date')} |"
     )
 
@@ -591,7 +617,7 @@ def generate_markdown_report(data: Dict[str, Any]) -> str:
     yf_tgt = yf.get("target_1y_est")
     yf_up_str = f"{(yf_tgt - price)/price * 100:+.1f}%" if isinstance(yf_tgt, (int, float)) and price > 0 else "N/A"
     lines.append(
-        f"| **Yahoo Finance** | **Buy / Outperform** | "
+        f"| **Yahoo Finance** | N/A（未抓取评级） | "
         f"1Y 预测均价: `\\${yf_tgt if yf_tgt is not None else 'N/A'}` | **{yf_up_str}** | "
         f"TTM P/E: `{yf_pe}x` \\| FWD P/E: `{yf_fpe}x`<br>5Y PEG: `{yf_peg}` | {yf.get('data_date')} |"
     )
@@ -645,14 +671,12 @@ def generate_markdown_report(data: Dict[str, Any]) -> str:
     lines.append("\n---\n")
     lines.append("## 3. 投资决策与仓位建议 (Actionable Synthesis)\n")
     lines.append(f"- **确定性定性**: **{verdict}**")
-    if ms_fv is not None:
-        val_low = min(median_target, ms_fv)
-        val_high = max(median_target, ms_fv)
+    anchors = [float(v) for v in (median_target, ms_fv) if isinstance(v, (int, float)) and v > 0]
+    if anchors:
+        lines.append(f"- **目标区间**: 共识中位数与晨星公允价值区间 `\\${min(anchors):,.2f} – \\${max(anchors):,.2f}`。")
     else:
-        val_low = median_target
-        val_high = median_target
-    lines.append(f"- **目标区间**: 核心公允价值回归区间在 `\\${val_low:,.2f} – \\${val_high:,.2f}`。")
-    lines.append("- **风险提示**: 重点跟踪宏观流动性变化、大额资本开支对自由现金流的摊薄，以及监管反垄断法律诉讼进展。")
+        lines.append("- **目标区间**: 数据不足，无法给出。")
+    lines.append("- **风险提示**: 本工具只汇总第三方估值数据，不含公司特定风险分析；风险须在研究报告中基于一手资料单独论证。")
 
     return "\n".join(lines)
 
@@ -660,9 +684,14 @@ def generate_markdown_report(data: Dict[str, Any]) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Multi-Source Valuation & Consensus Fair-Value Analysis Tool")
     parser.add_argument("ticker", type=str, help="Stock ticker symbol (e.g. META, AAPL, MSFT, GOOGL, KO)")
-    parser.add_argument("--date", type=str, default=None, help="Base date for data cutoff (YYYY-MM-DD)")
+    parser.add_argument("--date", type=str, default=None,
+                        help="Report date label (YYYY-MM-DD). Must be today: every source returns live data only.")
     parser.add_argument("--format", choices=["markdown", "json"], default="markdown", help="Output format (markdown or json)")
     args = parser.parse_args()
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    if args.date and args.date != today:
+        parser.error(f"--date {args.date} 不是今天（{today}）：六个数据源都只返回实时数据，无法按历史日期取数。")
 
     data = analyze_ticker(args.ticker, custom_date=args.date)
 
